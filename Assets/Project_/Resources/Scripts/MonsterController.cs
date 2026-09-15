@@ -17,13 +17,16 @@ public class MonsterController : MonoBehaviour
     public float speedDecaySpeed = 2f; 
     public float rotationSpeed = 15f; 
     
+    [Tooltip("Thời gian làm mượt animation (0.1 là lý tưởng, không gây cảm giác delay)")]
+    public float animationDampTime = 0.1f; 
+    
     private float currentSpeed;
     private bool isDead = false;
     private bool isHoldingWand = false;
 
     [Header("--- Chiến Đấu ---")]
-    public float attackCooldown = 1.2f; // Thời gian chờ giữa 2 lần đánh
-    public float invincibilityTime = 0.5f; // Thời gian bất tử sau khi bị dính đòn
+    public float attackCooldown = 1.2f; 
+    public float invincibilityTime = 0.5f; 
     private bool canAttack = true;
     private bool isInvincible = false;
 
@@ -87,7 +90,6 @@ public class MonsterController : MonoBehaviour
         if (spawnType == 0) anim.SetTrigger("SpawnGround");
         else anim.SetTrigger("SpawnAir");
 
-        // Gọi Coroutine xử lý giảm tốc độ ngay khi vừa sinh ra
         StartCoroutine(SpeedDecayRoutine());
     }
 
@@ -107,13 +109,19 @@ public class MonsterController : MonoBehaviour
 
         AnimatorStateInfo stateInfo = anim.GetCurrentAnimatorStateInfo(0);
         bool isBusyWithAction = stateInfo.IsTag("Action");
+        bool isTransitioningToAction = anim.IsInTransition(0) && anim.GetNextAnimatorStateInfo(0).IsTag("Action");
 
-        if (isHoldingWand || isBusyWithAction)
+        // KHÓA DI CHUYỂN
+        if (isHoldingWand || isBusyWithAction || isTransitioningToAction)
         {
-            anim.SetFloat("Speed", 0f);
+            // Dùng dampTime nhỏ gọn (0.05f) để khi dừng dùng skill, nhân vật khựng lại mượt mà thay vì giật lập tức
+            anim.SetFloat("Speed", 0f, 0.05f, Time.deltaTime);
             return; 
         }
 
+        float targetAnimSpeed = 0f;
+
+        // DI CHUYỂN VẬT LÝ (Tức thời, không delay để người chơi cảm thấy nhạy)
         if (moveDir.magnitude > 0.1f)
         {
             transform.Translate(moveDir * currentSpeed * Time.deltaTime, Space.World);
@@ -121,40 +129,35 @@ public class MonsterController : MonoBehaviour
             Quaternion targetRotation = Quaternion.LookRotation(moveDir);
             transform.rotation = Quaternion.Slerp(transform.rotation, targetRotation, Time.deltaTime * rotationSpeed);
             
-            anim.SetFloat("Speed", currentSpeed);
+            targetAnimSpeed = currentSpeed;
         }
-        else
-        {
-            anim.SetFloat("Speed", 0f);
-        }
+
+        // DI CHUYỂN ANIMATION (Được làm mượt bằng built-in Damp của Unity)
+        anim.SetFloat("Speed", targetAnimSpeed, animationDampTime, Time.deltaTime);
     }
 
     private void HandleCombatInputs()
     {
-        if (attackAction.triggered && canAttack)
+        bool isBusy = anim.GetCurrentAnimatorStateInfo(0).IsTag("Action") || anim.IsInTransition(0);
+
+        if (attackAction.triggered && canAttack && !isBusy)
         {
-            if (!anim.GetCurrentAnimatorStateInfo(0).IsTag("Action"))
-            {
-                anim.SetTrigger("Attack");
-                StartCoroutine(AttackCooldownRoutine()); // Kích hoạt hồi chiêu
-            }
+            anim.SetTrigger("Attack");
+            StartCoroutine(AttackCooldownRoutine()); 
         }
 
-        if (interactAction.triggered)
+        if (interactAction.triggered && !isBusy)
         {
-            if (!anim.GetCurrentAnimatorStateInfo(0).IsTag("Action"))
-            {
-                anim.SetTrigger("Interact");
-            }
+            anim.SetTrigger("Interact");
         }
 
-        isHoldingWand = wandAction.ReadValue<float>() > 0.5f;
+        isHoldingWand = wandAction.IsPressed(); 
         anim.SetBool("IsHoldingWand", isHoldingWand);
     }
 
     public void TakeDamage(float amount, bool isHeavyHit)
     {
-        if (isDead || isInvincible) return; // Không nhận sát thương nếu đang bất tử
+        if (isDead || isInvincible) return; 
 
         currentHP -= amount;
 
@@ -167,45 +170,38 @@ public class MonsterController : MonoBehaviour
             if (isHeavyHit) anim.SetTrigger("HitHeavy");
             else anim.SetTrigger("HitLight");
 
-            // Kích hoạt thời gian bất tử ngắn sau khi bị dính đòn
             StartCoroutine(InvincibilityRoutine());
         }
     }
 
-    // ==========================================
-    // HỆ THỐNG COROUTINE
-    // ==========================================
-
     private IEnumerator SpeedDecayRoutine()
     {
-        // 1. Chờ hết thời gian chạy nhanh
         yield return new WaitForSeconds(runDuration);
 
-        // 2. Bắt đầu giảm tốc độ từ từ cho đến khi bằng walkSpeed
         while (currentSpeed > walkSpeed && !isDead)
         {
             currentSpeed = Mathf.MoveTowards(currentSpeed, walkSpeed, speedDecaySpeed * Time.deltaTime);
-            yield return null; // Đợi đến frame tiếp theo
+            yield return null; 
         }
     }
 
     private IEnumerator AttackCooldownRoutine()
     {
         canAttack = false;
-        yield return new WaitForSeconds(attackCooldown); // Chờ hết hồi chiêu
+        yield return new WaitForSeconds(attackCooldown); 
         canAttack = true;
     }
 
     private IEnumerator InvincibilityRoutine()
     {
         isInvincible = true;
-        yield return new WaitForSeconds(invincibilityTime); // Chờ hết thời gian bất tử
+        yield return new WaitForSeconds(invincibilityTime); 
         isInvincible = false;
     }
 
     private IEnumerator DeathRoutine()
     {
-        yield return new WaitForSeconds(3f); // Chờ ngã xuống và nằm yên
+        yield return new WaitForSeconds(3f); 
 
         float shrinkDuration = 1.5f;
         Vector3 originalScale = transform.localScale;
@@ -228,10 +224,6 @@ public class MonsterController : MonoBehaviour
         StartCoroutine(DeathRoutine());
     }
 
-    // ==========================================
-    // CÁC HÀM TIỆN ÍCH KHÁC
-    // ==========================================
-
     private void HandleTestTriggers()
     {
         if (testPickup)
@@ -239,13 +231,11 @@ public class MonsterController : MonoBehaviour
             anim.SetTrigger("Pickup");
             testPickup = false;
         }
-
         if (testHitLight)
         {
             TakeDamage(testDamage, false);
             testHitLight = false;
         }
-
         if (testHitHeavy)
         {
             TakeDamage(testDamage * 2f, true);
