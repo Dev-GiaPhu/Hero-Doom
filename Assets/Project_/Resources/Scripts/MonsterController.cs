@@ -29,6 +29,48 @@ public class MonsterController : MonoBehaviour
     public float testDamage = 20f;
 
     private Animator anim;
+    
+    private InputAction moveAction;
+    private InputAction attackAction;
+    private InputAction wandAction;
+    private InputAction interactAction;
+
+    void Awake()
+    {
+        moveAction = new InputAction("Move", InputActionType.Value);
+        
+        moveAction.AddCompositeBinding("2DVector")
+            .With("Up", "<Keyboard>/w")
+            .With("Down", "<Keyboard>/s")
+            .With("Left", "<Keyboard>/a")
+            .With("Right", "<Keyboard>/d");
+
+        moveAction.AddCompositeBinding("2DVector")
+            .With("Up", "<Keyboard>/upArrow")
+            .With("Down", "<Keyboard>/downArrow")
+            .With("Left", "<Keyboard>/leftArrow")
+            .With("Right", "<Keyboard>/rightArrow");
+
+        attackAction = new InputAction("Attack", InputActionType.Button, "<Mouse>/leftButton");
+        wandAction = new InputAction("Wand", InputActionType.Button, "<Mouse>/rightButton");
+        interactAction = new InputAction("Interact", InputActionType.Button, "<Keyboard>/e");
+    }
+
+    void OnEnable()
+    {
+        moveAction.Enable();
+        attackAction.Enable();
+        wandAction.Enable();
+        interactAction.Enable();
+    }
+
+    void OnDisable()
+    {
+        moveAction.Disable();
+        attackAction.Disable();
+        wandAction.Disable();
+        interactAction.Disable();
+    }
 
     void Start()
     {
@@ -65,18 +107,8 @@ public class MonsterController : MonoBehaviour
             currentSpeed = Mathf.MoveTowards(currentSpeed, walkSpeed, speedDecaySpeed * Time.deltaTime);
         }
 
-        float moveX = 0f;
-        float moveZ = 0f;
-
-        if (Keyboard.current != null)
-        {
-            if (Keyboard.current.dKey.isPressed || Keyboard.current.rightArrowKey.isPressed) moveX += 1f;
-            if (Keyboard.current.aKey.isPressed || Keyboard.current.leftArrowKey.isPressed) moveX -= 1f;
-            if (Keyboard.current.wKey.isPressed || Keyboard.current.upArrowKey.isPressed) moveZ += 1f;
-            if (Keyboard.current.sKey.isPressed || Keyboard.current.downArrowKey.isPressed) moveZ -= 1f;
-        }
-
-        Vector3 moveDir = new Vector3(moveX, 0f, moveZ).normalized;
+        Vector2 moveInput = moveAction.ReadValue<Vector2>();
+        Vector3 moveDir = new Vector3(moveInput.x, 0f, moveInput.y).normalized;
 
         AnimatorStateInfo stateInfo = anim.GetCurrentAnimatorStateInfo(0);
         bool isBusyWithAction = stateInfo.IsTag("Action");
@@ -104,9 +136,7 @@ public class MonsterController : MonoBehaviour
 
     private void HandleCombatInputs()
     {
-        if (Mouse.current == null) return;
-
-        if (Mouse.current.leftButton.wasPressedThisFrame)
+        if (attackAction.triggered)
         {
             if (!anim.GetCurrentAnimatorStateInfo(0).IsTag("Action"))
             {
@@ -114,16 +144,16 @@ public class MonsterController : MonoBehaviour
             }
         }
 
-        if (Mouse.current.rightButton.wasPressedThisFrame)
+        if (interactAction.triggered)
         {
-            isHoldingWand = true;
-            anim.SetBool("IsHoldingWand", true);
+            if (!anim.GetCurrentAnimatorStateInfo(0).IsTag("Action"))
+            {
+                anim.SetTrigger("Interact");
+            }
         }
-        else if (Mouse.current.rightButton.wasReleasedThisFrame)
-        {
-            isHoldingWand = false;
-            anim.SetBool("IsHoldingWand", false);
-        }
+
+        isHoldingWand = wandAction.ReadValue<float>() > 0.5f;
+        anim.SetBool("IsHoldingWand", isHoldingWand);
     }
 
     private void HandleTestTriggers()
