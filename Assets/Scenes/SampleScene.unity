@@ -1254,11 +1254,13 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   maxHP: 100
   currentHP: 0
-  runSpeed: 8
+  runSpeed: 7
   walkSpeed: 3
-  runDuration: 3
-  speedDecaySpeed: 2
-  rotationSpeed: 15
+  runDuration: 5
+  speedDecaySpeed: 1
+  rotationSpeed: 8
+  attackCooldown: 1.2
+  invincibilityTime: 0.2
   testPickup: 0
   testHitLight: 0
   testHitHeavy: 0

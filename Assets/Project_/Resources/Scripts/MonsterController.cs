@@ -18,9 +18,14 @@ public class MonsterController : MonoBehaviour
     public float rotationSpeed = 15f; 
     
     private float currentSpeed;
-    private float runTimer;
     private bool isDead = false;
     private bool isHoldingWand = false;
+
+    [Header("--- Chiến Đấu ---")]
+    public float attackCooldown = 1.2f; // Thời gian chờ giữa 2 lần đánh
+    public float invincibilityTime = 0.5f; // Thời gian bất tử sau khi bị dính đòn
+    private bool canAttack = true;
+    private bool isInvincible = false;
 
     [Header("--- Test Animation Triggers ---")]
     public bool testPickup = false;
@@ -76,15 +81,14 @@ public class MonsterController : MonoBehaviour
     {
         anim = GetComponent<Animator>();
         currentHP = maxHP;
+        currentSpeed = runSpeed;
 
         int spawnType = Random.Range(0, 2);
-        if (spawnType == 0)
-            anim.SetTrigger("SpawnGround");
-        else
-            anim.SetTrigger("SpawnAir");
+        if (spawnType == 0) anim.SetTrigger("SpawnGround");
+        else anim.SetTrigger("SpawnAir");
 
-        currentSpeed = runSpeed;
-        runTimer = runDuration;
+        // Gọi Coroutine xử lý giảm tốc độ ngay khi vừa sinh ra
+        StartCoroutine(SpeedDecayRoutine());
     }
 
     void Update()
@@ -98,15 +102,6 @@ public class MonsterController : MonoBehaviour
 
     private void HandleMovement()
     {
-        if (runTimer > 0)
-        {
-            runTimer -= Time.deltaTime;
-        }
-        else
-        {
-            currentSpeed = Mathf.MoveTowards(currentSpeed, walkSpeed, speedDecaySpeed * Time.deltaTime);
-        }
-
         Vector2 moveInput = moveAction.ReadValue<Vector2>();
         Vector3 moveDir = new Vector3(moveInput.x, 0f, moveInput.y).normalized;
 
@@ -136,11 +131,12 @@ public class MonsterController : MonoBehaviour
 
     private void HandleCombatInputs()
     {
-        if (attackAction.triggered)
+        if (attackAction.triggered && canAttack)
         {
             if (!anim.GetCurrentAnimatorStateInfo(0).IsTag("Action"))
             {
                 anim.SetTrigger("Attack");
+                StartCoroutine(AttackCooldownRoutine()); // Kích hoạt hồi chiêu
             }
         }
 
@@ -155,6 +151,86 @@ public class MonsterController : MonoBehaviour
         isHoldingWand = wandAction.ReadValue<float>() > 0.5f;
         anim.SetBool("IsHoldingWand", isHoldingWand);
     }
+
+    public void TakeDamage(float amount, bool isHeavyHit)
+    {
+        if (isDead || isInvincible) return; // Không nhận sát thương nếu đang bất tử
+
+        currentHP -= amount;
+
+        if (currentHP <= 0)
+        {
+            Die();
+        }
+        else
+        {
+            if (isHeavyHit) anim.SetTrigger("HitHeavy");
+            else anim.SetTrigger("HitLight");
+
+            // Kích hoạt thời gian bất tử ngắn sau khi bị dính đòn
+            StartCoroutine(InvincibilityRoutine());
+        }
+    }
+
+    // ==========================================
+    // HỆ THỐNG COROUTINE
+    // ==========================================
+
+    private IEnumerator SpeedDecayRoutine()
+    {
+        // 1. Chờ hết thời gian chạy nhanh
+        yield return new WaitForSeconds(runDuration);
+
+        // 2. Bắt đầu giảm tốc độ từ từ cho đến khi bằng walkSpeed
+        while (currentSpeed > walkSpeed && !isDead)
+        {
+            currentSpeed = Mathf.MoveTowards(currentSpeed, walkSpeed, speedDecaySpeed * Time.deltaTime);
+            yield return null; // Đợi đến frame tiếp theo
+        }
+    }
+
+    private IEnumerator AttackCooldownRoutine()
+    {
+        canAttack = false;
+        yield return new WaitForSeconds(attackCooldown); // Chờ hết hồi chiêu
+        canAttack = true;
+    }
+
+    private IEnumerator InvincibilityRoutine()
+    {
+        isInvincible = true;
+        yield return new WaitForSeconds(invincibilityTime); // Chờ hết thời gian bất tử
+        isInvincible = false;
+    }
+
+    private IEnumerator DeathRoutine()
+    {
+        yield return new WaitForSeconds(3f); // Chờ ngã xuống và nằm yên
+
+        float shrinkDuration = 1.5f;
+        Vector3 originalScale = transform.localScale;
+        float elapsed = 0f;
+
+        while (elapsed < shrinkDuration)
+        {
+            transform.localScale = Vector3.Lerp(originalScale, Vector3.zero, elapsed / shrinkDuration);
+            elapsed += Time.deltaTime;
+            yield return null;
+        }
+
+        Destroy(gameObject);
+    }
+
+    private void Die()
+    {
+        isDead = true;
+        anim.SetTrigger("Die");
+        StartCoroutine(DeathRoutine());
+    }
+
+    // ==========================================
+    // CÁC HÀM TIỆN ÍCH KHÁC
+    // ==========================================
 
     private void HandleTestTriggers()
     {
@@ -175,49 +251,6 @@ public class MonsterController : MonoBehaviour
             TakeDamage(testDamage * 2f, true);
             testHitHeavy = false;
         }
-    }
-
-    public void TakeDamage(float amount, bool isHeavyHit)
-    {
-        if (isDead) return;
-
-        currentHP -= amount;
-
-        if (currentHP <= 0)
-        {
-            Die();
-        }
-        else
-        {
-            if (isHeavyHit) anim.SetTrigger("HitHeavy");
-            else anim.SetTrigger("HitLight");
-        }
-    }
-
-    private void Die()
-    {
-        isDead = true;
-        anim.SetTrigger("Die");
-        StartCoroutine(DeathRoutine());
-    }
-
-    private IEnumerator DeathRoutine()
-    {
-        yield return new WaitForSeconds(3f);
-
-        float shrinkDuration = 1.5f;
-        Vector3 originalScale = transform.localScale;
-        float elapsed = 0f;
-
-        while (elapsed < shrinkDuration)
-        {
-            transform.localScale = Vector3.Lerp(originalScale, Vector3.zero, elapsed / shrinkDuration);
-            elapsed += Time.deltaTime;
-            yield return null;
-        }
-
-        transform.localScale = Vector3.zero;
-        Destroy(gameObject);
     }
 
     private void OnTriggerEnter(Collider other)
