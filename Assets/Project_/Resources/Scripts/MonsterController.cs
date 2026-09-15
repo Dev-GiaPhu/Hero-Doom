@@ -1,6 +1,6 @@
 using System.Collections;
 using UnityEngine;
-using UnityEngine.InputSystem; // Thư viện cho Input System mới
+using UnityEngine.InputSystem;
 
 [RequireComponent(typeof(Animator))]
 [RequireComponent(typeof(Rigidbody))]
@@ -15,6 +15,7 @@ public class MonsterController : MonoBehaviour
     public float walkSpeed = 3f;
     public float runDuration = 3f; 
     public float speedDecaySpeed = 2f; 
+    public float rotationSpeed = 15f; 
     
     private float currentSpeed;
     private float runTimer;
@@ -64,17 +65,6 @@ public class MonsterController : MonoBehaviour
             currentSpeed = Mathf.MoveTowards(currentSpeed, walkSpeed, speedDecaySpeed * Time.deltaTime);
         }
 
-        bool isPlayingAction = anim.GetCurrentAnimatorStateInfo(0).IsTag("Action");
-        bool isTransitioningToAction = anim.IsInTransition(0) && anim.GetNextAnimatorStateInfo(0).IsTag("Action");
-
-        // KHÓA DI CHUYỂN
-        if (isHoldingWand || isPlayingAction || isTransitioningToAction)
-        {
-            anim.SetFloat("Speed", 0f);
-            return; 
-        }
-
-        // --- CẬP NHẬT SANG INPUT SYSTEM MỚI ---
         float moveX = 0f;
         float moveZ = 0f;
 
@@ -88,10 +78,22 @@ public class MonsterController : MonoBehaviour
 
         Vector3 moveDir = new Vector3(moveX, 0f, moveZ).normalized;
 
+        AnimatorStateInfo stateInfo = anim.GetCurrentAnimatorStateInfo(0);
+        bool isBusyWithAction = stateInfo.IsTag("Action");
+
+        if (isHoldingWand || isBusyWithAction)
+        {
+            anim.SetFloat("Speed", 0f);
+            return; 
+        }
+
         if (moveDir.magnitude > 0.1f)
         {
             transform.Translate(moveDir * currentSpeed * Time.deltaTime, Space.World);
-            transform.forward = Vector3.Slerp(transform.forward, moveDir, Time.deltaTime * 10f);
+            
+            Quaternion targetRotation = Quaternion.LookRotation(moveDir);
+            transform.rotation = Quaternion.Slerp(transform.rotation, targetRotation, Time.deltaTime * rotationSpeed);
+            
             anim.SetFloat("Speed", currentSpeed);
         }
         else
@@ -102,20 +104,25 @@ public class MonsterController : MonoBehaviour
 
     private void HandleCombatInputs()
     {
-        if (anim.GetCurrentAnimatorStateInfo(0).IsTag("Action") || anim.IsInTransition(0)) return;
+        if (Mouse.current == null) return;
 
-        // --- CẬP NHẬT SANG INPUT SYSTEM MỚI ---
-        if (Mouse.current != null)
+        if (Mouse.current.leftButton.wasPressedThisFrame)
         {
-            // Click chuột trái
-            if (Mouse.current.leftButton.wasPressedThisFrame)
+            if (!anim.GetCurrentAnimatorStateInfo(0).IsTag("Action"))
             {
                 anim.SetTrigger("Attack");
             }
+        }
 
-            // Giữ chuột phải
-            isHoldingWand = Mouse.current.rightButton.isPressed;
-            anim.SetBool("IsHoldingWand", isHoldingWand);
+        if (Mouse.current.rightButton.wasPressedThisFrame)
+        {
+            isHoldingWand = true;
+            anim.SetBool("IsHoldingWand", true);
+        }
+        else if (Mouse.current.rightButton.wasReleasedThisFrame)
+        {
+            isHoldingWand = false;
+            anim.SetBool("IsHoldingWand", false);
         }
     }
 
