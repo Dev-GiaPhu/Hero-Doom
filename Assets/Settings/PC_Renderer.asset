@@ -12,7 +12,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 80e601f59c7ebab44be2d91de4aec548, type: 3}
   m_Name: PixelatedIntermediateFeature
   m_EditorClassIdentifier: 
-  m_Active: 0
+  m_Active: 1
   settings:
     pixelSize: 5
     depthEdgeThreshold: 1
