@@ -610,6 +610,20 @@ MonoBehaviour:
       m_PostInfinity: 2
       m_RotationOrder: 4
   CustomBlends: {fileID: 0}
+--- !u!114 &330585549
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 330585543}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 44ac76232a35443bb34b7ceec4bcba4f, type: 3}
+  m_Name:
+  m_EditorClassIdentifier:
+  moveSpeed: 12
+  sprintMultiplier: 2
 --- !u!1 &343056850
 GameObject:
   m_ObjectHideFlags: 0
@@ -821,9 +835,9 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: c7c7f2e6251f4ab4e9e25666763cb81e, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  maxChunkSize: 4
+  renderCamera: {fileID: 330585545}
   radius: 14
-  player: {fileID: 0}
+  maxChunkSize: 4
   seed: 1
   groundPrefabs:
   - prefab: {fileID: 0}
@@ -871,6 +885,13 @@ MonoBehaviour:
   - prefab: {fileID: 7197307090802461446, guid: f9b118565e01ef84ba485d707b969531, type: 3}
     size: 2
     spawnChance: 20
+  waterPrefab: {fileID: 100000, guid: b62f87a7c8b7420d9d5cb3ca4ee13303, type: 3}
+  waterLevel: -0.35
+  riverHalfWidth: 1
+  riverAmplitude: 5
+  riverFrequency: 0.08
+  secondaryAmplitude: 2
+  secondaryFrequency: 0.035
 --- !u!4 &403880880
 Transform:
   m_ObjectHideFlags: 0
