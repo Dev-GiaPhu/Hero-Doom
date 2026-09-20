@@ -1,163 +1,479 @@
-// 1. MonsterAI.cs (Gắn vào Prefab Quái - Thay thế MonsterController)
 using System.Collections;
+using System.Collections.Generic;
 using UnityEngine;
+using UnityEngine.AI;
 
-[RequireComponent(typeof(Animator))]
-[RequireComponent(typeof(Rigidbody))]
+public enum MonsterRole
+{
+    BasicMelee,
+    Mage,
+    Tank,
+    Assassin
+}
+
 public class MonsterAI : MonoBehaviour
 {
-    [Header("--- Chỉ Số Cơ Bản ---")]
-    public float maxHP = 100f;
+    public static readonly HashSet<MonsterAI> ActiveMonsters = new();
+
+    [Header("Role")]
+    public MonsterRole role = MonsterRole.BasicMelee;
+
+    [Header("Stats")]
+    public float maxHP = 130f;
     public float currentHP;
-
-    [Header("--- Di Chuyển ---")]
-    public float runSpeed = 8f;
-    public float walkSpeed = 3f;
-    public float runDuration = 3f; 
-    public float speedDecaySpeed = 2f; 
-    public float rotationSpeed = 15f; 
-    public float animationDampTime = 0.1f; 
-    
-    private float currentSpeed;
-    private bool isDead = false;
-
-    [Header("--- Chiến Đấu ---")]
+    public float moveSpeed = 4.2f;
+    public float attackDamage = 14f;
     public float attackRange = 1.5f;
-    public float attackCooldown = 1.2f; 
-    public float invincibilityTime = 0.5f; 
-    private bool canAttack = true;
-    private bool isInvincible = false;
+    public float attackCooldown = 1f;
+    [Range(0f, 0.8f)] public float armor = 0f;
 
+    [Header("Mage")]
+    public float preferredRange = 6f;
+    public float retreatRange = 3.5f;
+    public float specialCooldown = 7f;
+    public float specialDamage = 28f;
+
+    [Header("Combat Feel")]
+    public float rotationSpeed = 12f;
+    public float knockbackForce = 0.7f;
+    public float corpseHoldTime = 2.5f;
+    public float shrinkDuration = 1.25f;
+
+    public bool IsAlive { get; private set; } = true;
+    public float HPPercent => maxHP <= 0f ? 0f : currentHP / maxHP;
+    public CapturePillar GuardPillar { get; private set; }
+
+    private HeroBotAI heroTarget;
     private Animator anim;
-    private Transform heroTarget;
+    private NavMeshAgent agent;
+    private Rigidbody rb;
+    private float attackTimer;
+    private float specialTimer;
+    private bool beingKnocked;
+
+    void Awake()
+    {
+        EnsureRuntimeComponents();
+        currentHP = maxHP;
+    }
+
+    void OnEnable()
+    {
+        if (IsAlive) ActiveMonsters.Add(this);
+    }
+
+    void OnDisable()
+    {
+        ActiveMonsters.Remove(this);
+        if (GuardPillar != null) GuardPillar.UnregisterGuard(this);
+    }
 
     void Start()
     {
-        anim = GetComponent<Animator>();
+        HeroBotAI currentHero = HeroDoomGameManager.Instance != null ? HeroDoomGameManager.Instance.CurrentHero : FindFirstObjectByType<HeroBotAI>();
+        heroTarget = currentHero;
+        TryPlaceOnNavMesh();
+        Trigger("SpawnGround");
+    }
+
+    public void ConfigureBySlot(int slot)
+    {
+        role = (MonsterRole)Mathf.Clamp(slot, 0, 3);
+        switch (role)
+        {
+            case MonsterRole.Mage:
+                maxHP = 90f; moveSpeed = 3.8f; attackDamage = 12f; attackRange = 8f;
+                attackCooldown = 1.35f; preferredRange = 6f; retreatRange = 3.2f;
+                specialCooldown = 7f; specialDamage = 30f; armor = 0.05f; knockbackForce = 0.5f;
+                break;
+            case MonsterRole.Tank:
+                maxHP = 320f; moveSpeed = 2.6f; attackDamage = 18f; attackRange = 1.7f;
+                attackCooldown = 1.35f; armor = 0.32f; knockbackForce = 1.2f;
+                break;
+            case MonsterRole.Assassin:
+                maxHP = 75f; moveSpeed = 7f; attackDamage = 25f; attackRange = 1.45f;
+                attackCooldown = 0.65f; armor = 0f; knockbackForce = 0.85f;
+                break;
+            default:
+                maxHP = 130f; moveSpeed = 4.2f; attackDamage = 14f; attackRange = 1.55f;
+                attackCooldown = 1f; armor = 0.08f; knockbackForce = 0.65f;
+                break;
+        }
+
         currentHP = maxHP;
-        currentSpeed = runSpeed;
-
-        GameObject hero = GameObject.FindGameObjectWithTag("Player"); 
-        if (hero != null) heroTarget = hero.transform;
-
-        int spawnType = Random.Range(0, 2);
-        if (spawnType == 0) anim.SetTrigger("SpawnGround");
-        else anim.SetTrigger("SpawnAir");
-
-        StartCoroutine(SpeedDecayRoutine());
+        EnsureRuntimeComponents();
+        ApplyAgentSettings();
     }
 
     void Update()
     {
-        if (isDead || heroTarget == null) return;
+        if (!IsAlive || beingKnocked) return;
 
-        AnimatorStateInfo stateInfo = anim.GetCurrentAnimatorStateInfo(0);
-        bool isBusyWithAction = stateInfo.IsTag("Action");
-        bool isTransitioningToAction = anim.IsInTransition(0) && anim.GetNextAnimatorStateInfo(0).IsTag("Action");
+        attackTimer -= Time.deltaTime;
+        specialTimer -= Time.deltaTime;
 
-        if (isBusyWithAction || isTransitioningToAction)
+        if (heroTarget == null || !heroTarget.IsAlive)
+            heroTarget = HeroDoomGameManager.Instance != null ? HeroDoomGameManager.Instance.CurrentHero : FindFirstObjectByType<HeroBotAI>();
+
+        if (heroTarget == null || !heroTarget.IsAlive)
         {
-            anim.SetFloat("Speed", 0f, 0.05f, Time.deltaTime);
-            return; 
+            StopMoving();
+            return;
         }
 
-        float distance = Vector3.Distance(transform.position, heroTarget.position);
-        
+        if (!TryPlaceOnNavMesh()) return;
+
+        if (GuardPillar != null)
+        {
+            HandleGuardBehaviour();
+            return;
+        }
+
+        HandleRoleBehaviour();
+    }
+
+    private void HandleRoleBehaviour()
+    {
+        float distance = FlatDistance(transform.position, heroTarget.transform.position);
+
+        if (role == MonsterRole.Mage)
+        {
+            if (distance < retreatRange)
+            {
+                Vector3 away = (transform.position - heroTarget.transform.position).normalized;
+                MoveTo(transform.position + away * preferredRange);
+                return;
+            }
+
+            if (distance > preferredRange + 1f)
+            {
+                MoveTo(heroTarget.transform.position);
+                return;
+            }
+
+            StopMoving();
+            Face(heroTarget.transform.position);
+
+            if (specialTimer <= 0f && (HPPercent < 0.55f || distance <= preferredRange))
+            {
+                CastMageSpecial();
+                return;
+            }
+
+            if (attackTimer <= 0f) AttackHero(false);
+            return;
+        }
+
         if (distance > attackRange)
         {
-            MoveTowardsHero();
+            MoveTo(heroTarget.transform.position);
+            return;
         }
-        else if (canAttack)
-        {
-            anim.SetFloat("Speed", 0f, animationDampTime, Time.deltaTime);
-            anim.SetTrigger("Attack");
-            StartCoroutine(AttackCooldownRoutine());
-        }
+
+        StopMoving();
+        Face(heroTarget.transform.position);
+        if (attackTimer <= 0f) AttackHero(role == MonsterRole.Tank);
     }
 
-    private void MoveTowardsHero()
+    private void HandleGuardBehaviour()
     {
-        Vector3 moveDir = (heroTarget.position - transform.position).normalized;
-        moveDir.y = 0f;
+        if (GuardPillar == null) return;
 
-        if (moveDir.magnitude > 0.1f)
+        float heroDistance = FlatDistance(transform.position, heroTarget.transform.position);
+        bool heroNearZone = GuardPillar.IsInside(heroTarget.transform.position, attackRange + 1.5f);
+
+        if (heroNearZone && heroDistance <= Mathf.Max(attackRange, role == MonsterRole.Mage ? preferredRange + 1f : attackRange + 2f))
         {
-            transform.Translate(moveDir * currentSpeed * Time.deltaTime, Space.World);
-            
-            Quaternion targetRotation = Quaternion.LookRotation(moveDir);
-            transform.rotation = Quaternion.Slerp(transform.rotation, targetRotation, Time.deltaTime * rotationSpeed);
+            if (role == MonsterRole.Mage)
+            {
+                if (heroDistance < retreatRange)
+                {
+                    Vector3 away = (transform.position - heroTarget.transform.position).normalized;
+                    MoveTo(ClampToGuardZone(transform.position + away * preferredRange));
+                }
+                else if (heroDistance > preferredRange + 1f)
+                {
+                    MoveTo(ClampToGuardZone(heroTarget.transform.position));
+                }
+                else
+                {
+                    StopMoving();
+                    Face(heroTarget.transform.position);
+                    if (specialTimer <= 0f && (HPPercent < 0.55f || heroDistance <= preferredRange)) CastMageSpecial();
+                    else if (attackTimer <= 0f) AttackHero(false);
+                }
+            }
+            else if (heroDistance > attackRange) MoveTo(ClampToGuardZone(heroTarget.transform.position));
+            else
+            {
+                StopMoving();
+                Face(heroTarget.transform.position);
+                if (attackTimer <= 0f) AttackHero(role == MonsterRole.Tank);
+            }
+            return;
         }
 
-        anim.SetFloat("Speed", currentSpeed, animationDampTime, Time.deltaTime);
-    }
-
-    public void TakeDamage(float amount, bool isHeavyHit)
-    {
-        if (isDead || isInvincible) return; 
-
-        currentHP -= amount;
-
-        if (currentHP <= 0)
-        {
-            Die();
-        }
+        float fromCenter = FlatDistance(transform.position, GuardPillar.transform.position);
+        if (fromCenter > Mathf.Max(0.8f, GuardPillar.captureRadius * 0.55f))
+            MoveTo(GuardPillar.transform.position);
         else
-        {
-            if (isHeavyHit) anim.SetTrigger("HitHeavy");
-            else anim.SetTrigger("HitLight");
+            StopMoving();
+    }
 
-            StartCoroutine(InvincibilityRoutine());
+    private Vector3 ClampToGuardZone(Vector3 desired)
+    {
+        Vector3 center = GuardPillar.transform.position;
+        Vector3 flat = desired - center;
+        flat.y = 0f;
+        float max = GuardPillar.captureRadius * 0.85f;
+        if (flat.magnitude > max) flat = flat.normalized * max;
+        return center + flat;
+    }
+
+    private void AttackHero(bool heavy)
+    {
+        if (heroTarget == null || !heroTarget.IsAlive) return;
+        attackTimer = Mathf.Max(0.1f, attackCooldown);
+        Trigger("Attack");
+
+        float damage = attackDamage;
+        if (role == MonsterRole.Assassin && heroTarget.CurrentHP / Mathf.Max(1f, heroTarget.MaxHP) < 0.35f)
+            damage *= 1.2f;
+
+        Vector3 push = (heroTarget.transform.position - transform.position).normalized;
+        if (role == MonsterRole.Mage)
+            MagicProjectile.Spawn(transform.position + Vector3.up * 1.25f, heroTarget, this, damage, knockbackForce);
+        else
+            heroTarget.TakeDamage(damage, this, push * knockbackForce, heavy);
+    }
+
+    private void CastMageSpecial()
+    {
+        specialTimer = Mathf.Max(1f, specialCooldown);
+        Trigger("Attack");
+
+        if (HPPercent < 0.55f)
+        {
+            float heal = maxHP * 0.18f;
+            currentHP = Mathf.Min(maxHP, currentHP + heal);
+        }
+
+        if (heroTarget != null && heroTarget.IsAlive && FlatDistance(transform.position, heroTarget.transform.position) <= attackRange + 1.5f)
+        {
+            MagicProjectile.SpawnLightning(transform.position + Vector3.up * 1.35f, heroTarget.transform.position + Vector3.up);
+            Vector3 push = (heroTarget.transform.position - transform.position).normalized;
+            heroTarget.TakeDamage(specialDamage, this, push * (knockbackForce + 0.8f), true);
         }
     }
 
-    private IEnumerator SpeedDecayRoutine()
+    public float TakeDamage(float amount, bool heavyHit)
     {
-        yield return new WaitForSeconds(runDuration);
+        if (!IsAlive || amount <= 0f) return 0f;
 
-        while (currentSpeed > walkSpeed && !isDead)
+        if (role == MonsterRole.Tank && Random.value < 0.22f)
+            amount *= 0.45f;
+
+        float actual = Mathf.Min(currentHP, amount * (1f - armor));
+        currentHP -= actual;
+
+        if (currentHP <= 0f) Die();
+        else Trigger(heavyHit ? "HitHeavy" : "HitLight");
+
+        return actual;
+    }
+
+    public void ApplyKnockback(Vector3 velocity, float duration = 0.28f)
+    {
+        if (!IsAlive || velocity.sqrMagnitude < 0.01f) return;
+        StartCoroutine(KnockbackRoutine(velocity, duration));
+    }
+
+    private IEnumerator KnockbackRoutine(Vector3 velocity, float duration)
+    {
+        beingKnocked = true;
+        if (agent != null && agent.isOnNavMesh) agent.isStopped = true;
+
+        InfiniteMapGenerator map = FindFirstObjectByType<InfiniteMapGenerator>();
+        float time = 0f;
+        while (time < duration && IsAlive)
         {
-            currentSpeed = Mathf.MoveTowards(currentSpeed, walkSpeed, speedDecaySpeed * Time.deltaTime);
-            yield return null; 
+            float damping = 1f - time / duration;
+            Vector3 next = transform.position + velocity * damping * Time.deltaTime;
+            if (map != null) next = map.ClampInsideWorld(next);
+            transform.position = next;
+            if (map != null && map.IsWaterAtWorldPosition(transform.position))
+            {
+                KillByEnvironment();
+                break;
+            }
+            time += Time.deltaTime;
+            yield return null;
         }
+
+        beingKnocked = false;
+        TryPlaceOnNavMesh();
     }
 
-    private IEnumerator AttackCooldownRoutine()
+    public void KillByEnvironment()
     {
-        canAttack = false;
-        // Gây sát thương cho HeroBotAI ở đây
-        HeroBotAI hero = heroTarget.GetComponent<HeroBotAI>();
-        if(hero != null) hero.TakeDamage(10f);
-
-        yield return new WaitForSeconds(attackCooldown); 
-        canAttack = true;
+        if (!IsAlive) return;
+        currentHP = 0f;
+        Die();
     }
 
-    private IEnumerator InvincibilityRoutine()
+    private void Die()
     {
-        isInvincible = true;
-        yield return new WaitForSeconds(invincibilityTime); 
-        isInvincible = false;
+        if (!IsAlive) return;
+        IsAlive = false;
+        ActiveMonsters.Remove(this);
+
+        if (GuardPillar != null)
+        {
+            GuardPillar.UnregisterGuard(this);
+            GuardPillar = null;
+        }
+
+        StopMoving();
+        if (agent != null) agent.enabled = false;
+        foreach (Collider c in GetComponentsInChildren<Collider>()) c.enabled = false;
+
+        Trigger("Die");
+        ExperienceOrb.Spawn(transform.position, GetXPValue());
+        StartCoroutine(DeathRoutine());
     }
 
     private IEnumerator DeathRoutine()
     {
-        yield return new WaitForSeconds(3f); 
-        float shrinkDuration = 1.5f;
-        Vector3 originalScale = transform.localScale;
-        float elapsed = 0f;
-        while (elapsed < shrinkDuration)
+        yield return new WaitForSeconds(corpseHoldTime);
+        Vector3 startScale = transform.localScale;
+        float t = 0f;
+        while (t < shrinkDuration)
         {
-            transform.localScale = Vector3.Lerp(originalScale, Vector3.zero, elapsed / shrinkDuration);
-            elapsed += Time.deltaTime;
+            t += Time.deltaTime;
+            transform.localScale = Vector3.Lerp(startScale, Vector3.zero, Mathf.Clamp01(t / shrinkDuration));
             yield return null;
         }
         Destroy(gameObject);
     }
 
-    private void Die()
+    public void AssignGuard(CapturePillar pillar)
     {
-        isDead = true;
-        anim.SetTrigger("Die");
-        StartCoroutine(DeathRoutine());
+        if (!IsAlive) return;
+        if (GuardPillar != null && GuardPillar != pillar) GuardPillar.UnregisterGuard(this);
+        GuardPillar = pillar;
+    }
+
+    public void ClearGuard(CapturePillar pillar)
+    {
+        if (GuardPillar == pillar) GuardPillar = null;
+    }
+
+    private float GetXPValue()
+    {
+        switch (role)
+        {
+            case MonsterRole.Tank: return 8f;
+            case MonsterRole.Mage: return 6f;
+            case MonsterRole.Assassin: return 7f;
+            default: return 4f;
+        }
+    }
+
+    private void EnsureRuntimeComponents()
+    {
+        anim = GetComponent<Animator>();
+        if (anim == null)
+        {
+            anim = gameObject.AddComponent<Animator>();
+            RuntimeAnimatorController sharedController = Resources.Load<RuntimeAnimatorController>("Animator/Skeleton_Mage");
+            if (sharedController != null) anim.runtimeAnimatorController = sharedController;
+        }
+        else if (anim.runtimeAnimatorController == null)
+        {
+            RuntimeAnimatorController sharedController = Resources.Load<RuntimeAnimatorController>("Animator/Skeleton_Mage");
+            if (sharedController != null) anim.runtimeAnimatorController = sharedController;
+        }
+
+        Collider col = GetComponent<Collider>();
+        if (col == null)
+        {
+            CapsuleCollider capsule = gameObject.AddComponent<CapsuleCollider>();
+            capsule.center = new Vector3(0f, 1f, 0f);
+            capsule.height = 2f;
+            capsule.radius = 0.45f;
+        }
+
+        rb = GetComponent<Rigidbody>();
+        if (rb == null) rb = gameObject.AddComponent<Rigidbody>();
+        rb.isKinematic = true;
+        rb.useGravity = false;
+
+        agent = GetComponent<NavMeshAgent>();
+        if (agent == null) agent = gameObject.AddComponent<NavMeshAgent>();
+        ApplyAgentSettings();
+    }
+
+    private void ApplyAgentSettings()
+    {
+        if (agent == null) return;
+        agent.speed = moveSpeed;
+        agent.angularSpeed = 720f;
+        agent.acceleration = Mathf.Max(10f, moveSpeed * 5f);
+        agent.stoppingDistance = Mathf.Max(0.2f, role == MonsterRole.Mage ? preferredRange : attackRange * 0.85f);
+        agent.radius = 0.42f;
+        agent.height = 2f;
+        agent.obstacleAvoidanceType = ObstacleAvoidanceType.HighQualityObstacleAvoidance;
+    }
+
+    private bool TryPlaceOnNavMesh()
+    {
+        if (agent == null || !agent.enabled) return false;
+        if (agent.isOnNavMesh) return true;
+
+        if (NavMesh.SamplePosition(transform.position, out NavMeshHit hit, 2.5f, NavMesh.AllAreas))
+        {
+            agent.Warp(hit.position);
+            return true;
+        }
+        return false;
+    }
+
+    private void MoveTo(Vector3 destination)
+    {
+        if (agent == null || !agent.enabled || !agent.isOnNavMesh) return;
+        agent.isStopped = false;
+        agent.speed = moveSpeed;
+        agent.SetDestination(destination);
+        SetSpeed(moveSpeed);
+    }
+
+    private void StopMoving()
+    {
+        if (agent != null && agent.enabled && agent.isOnNavMesh) agent.isStopped = true;
+        SetSpeed(0f);
+    }
+
+    private void Face(Vector3 point)
+    {
+        Vector3 dir = point - transform.position;
+        dir.y = 0f;
+        if (dir.sqrMagnitude < 0.01f) return;
+        transform.rotation = Quaternion.Slerp(transform.rotation, Quaternion.LookRotation(dir), rotationSpeed * Time.deltaTime);
+    }
+
+    private void Trigger(string parameter)
+    {
+        if (anim != null && anim.runtimeAnimatorController != null) anim.SetTrigger(parameter);
+    }
+
+    private void SetSpeed(float speed)
+    {
+        if (anim != null && anim.runtimeAnimatorController != null) anim.SetFloat("Speed", speed, 0.1f, Time.deltaTime);
+    }
+
+    private static float FlatDistance(Vector3 a, Vector3 b)
+    {
+        a.y = b.y = 0f;
+        return Vector3.Distance(a, b);
     }
 }
