@@ -14,11 +14,11 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   m_Active: 1
   settings:
-    pixelSize: 5
-    depthEdgeThreshold: 1
-    depthEdgeStrength: 1
+    pixelSize: 4
+    depthEdgeThreshold: 0.005
+    depthEdgeStrength: 0.223
     edgeColor: {r: 0, g: 0, b: 0, a: 1}
-    edgeWidth: 3
+    edgeWidth: 1.82
     debugDepth: 0
     shader: {fileID: 4800000, guid: ab9cd3201c451cc40a08c719ee2e4200, type: 3}
 --- !u!114 &11400000
