@@ -8,6 +8,12 @@ public class MapCameraMovement : MonoBehaviour
     [Min(0f)] public float moveSpeed = 12f;
     [Tooltip("Hệ số tốc độ khi giữ Shift.")]
     [Min(1f)] public float sprintMultiplier = 2f;
+    [Header("Smooth")]
+    [Tooltip("Thời gian camera tăng/giảm tốc. Nhỏ = phản hồi nhanh, lớn = trôi mềm hơn.")]
+    [Range(0.02f, 1f)] public float smoothTime = 0.16f;
+
+    private Vector3 currentVelocity;
+    private Vector3 smoothVelocity;
 
     void Update()
     {
@@ -25,8 +31,10 @@ public class MapCameraMovement : MonoBehaviour
         if (Keyboard.current.leftShiftKey.isPressed || Keyboard.current.rightShiftKey.isPressed)
             speed *= sprintMultiplier;
 
-        // WASD luôn chạy theo trục map, không làm thay đổi độ cao/góc camera.
-        Vector3 delta = new Vector3(input.x, 0f, input.y) * speed * Time.deltaTime;
-        transform.position += delta;
+        // Smooth velocity thay vì lerp position để camera tăng tốc và hãm tự nhiên,
+        // đồng thời vẫn giữ nguyên độ cao và góc camera.
+        Vector3 targetVelocity = new Vector3(input.x, 0f, input.y) * speed;
+        currentVelocity = Vector3.SmoothDamp(currentVelocity, targetVelocity, ref smoothVelocity, smoothTime);
+        transform.position += currentVelocity * Time.deltaTime;
     }
 }

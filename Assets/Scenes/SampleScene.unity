@@ -625,6 +625,7 @@ MonoBehaviour:
   m_EditorClassIdentifier:
   moveSpeed: 12
   sprintMultiplier: 2
+  smoothTime: 0.16
 --- !u!1 &343056850
 GameObject:
   m_ObjectHideFlags: 0
