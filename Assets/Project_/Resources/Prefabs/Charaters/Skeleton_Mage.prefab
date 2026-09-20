@@ -44,7 +44,7 @@ Light:
   serializedVersion: 11
   m_Type: 0
   m_Color: {r: 0.6000622, g: 0.49381453, b: 0.764151, a: 1}
-  m_Intensity: 8
+  m_Intensity: 5
   m_Range: 10
   m_SpotAngle: 94.113396
   m_InnerSpotAngle: 55.2165
@@ -1500,17 +1500,22 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 475bb111ceba5344087124dccc2c08db, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
+  role: 1
   maxHP: 100
   currentHP: 0
-  runSpeed: 7
-  walkSpeed: 3
-  runDuration: 5
-  speedDecaySpeed: 1
-  rotationSpeed: 8
-  animationDampTime: 0.1
+  moveSpeed: 4.2
+  attackDamage: 14
   attackRange: 1.5
   attackCooldown: 1.2
-  invincibilityTime: 0.2
+  armor: 0
+  preferredRange: 6
+  retreatRange: 3.5
+  specialCooldown: 7
+  specialDamage: 28
+  rotationSpeed: 8
+  knockbackForce: 0.7
+  corpseHoldTime: 2.5
+  shrinkDuration: 1.25
 --- !u!1 &7922246046900454250
 GameObject:
   m_ObjectHideFlags: 0
