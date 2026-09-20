@@ -14,6 +14,7 @@ public enum MonsterRole
 public class MonsterAI : MonoBehaviour
 {
     public static readonly HashSet<MonsterAI> ActiveMonsters = new();
+    public static event System.Action<MonsterAI> Died;
 
     [Header("Role")]
     public MonsterRole role = MonsterRole.BasicMelee;
@@ -276,6 +277,12 @@ public class MonsterAI : MonoBehaviour
         float actual = Mathf.Min(currentHP, amount * (1f - armor));
         currentHP -= actual;
 
+        DamagePopup.Spawn(
+            transform.position + Vector3.up * 1.9f,
+            actual,
+            DamagePopupKind.DamageToMonster,
+            heavyHit);
+
         if (currentHP <= 0f) Die();
         else Trigger(heavyHit ? "HitHeavy" : "HitLight");
 
@@ -326,6 +333,10 @@ public class MonsterAI : MonoBehaviour
         if (!IsAlive) return;
         IsAlive = false;
         ActiveMonsters.Remove(this);
+
+        // Phát event NGAY khi HP về 0, trước animation corpse.
+        // Hero sẽ bỏ focus trong cùng frame dù object vẫn còn tồn tại.
+        Died?.Invoke(this);
 
         if (GuardPillar != null)
         {

@@ -14,6 +14,7 @@ public class DayNightCycle3D : MonoBehaviour
     public AnimationCurve sunIntensity;
 
     public float TimeFraction { get; private set; }
+    public float WeatherIntensityMultiplier { get; private set; } = 1f;
 
     void Awake()
     {
@@ -24,16 +25,25 @@ public class DayNightCycle3D : MonoBehaviour
     void Update()
     {
         if (directionalLight == null || dayDuration <= 0f) return;
+
         TimeFraction = Mathf.Repeat(TimeFraction + Time.deltaTime / dayDuration, 1f);
         ApplyLighting();
+    }
+
+    public void SetWeatherIntensityMultiplier(float multiplier)
+    {
+        WeatherIntensityMultiplier = Mathf.Clamp(multiplier, 0.15f, 1.25f);
     }
 
     private void ApplyLighting()
     {
         if (directionalLight == null) return;
+
         float sunAngle = Mathf.Lerp(sunAngleRange.x, sunAngleRange.y, TimeFraction);
         directionalLight.transform.rotation = Quaternion.Euler(sunAngle, sunYaw, 0f);
         directionalLight.color = sunColor.Evaluate(TimeFraction);
-        directionalLight.intensity = Mathf.Max(0f, sunIntensity.Evaluate(TimeFraction));
+
+        float baseIntensity = Mathf.Max(0f, sunIntensity.Evaluate(TimeFraction));
+        directionalLight.intensity = baseIntensity * WeatherIntensityMultiplier;
     }
 }

@@ -61,6 +61,16 @@ public class HeroBotAI : MonoBehaviour
         currentHP = maxHP;
     }
 
+    void OnEnable()
+    {
+        MonsterAI.Died += OnMonsterDied;
+    }
+
+    void OnDisable()
+    {
+        MonsterAI.Died -= OnMonsterDied;
+    }
+
     void Start()
     {
         HeroDoomGameManager.Instance?.RegisterHero(this);
@@ -122,6 +132,18 @@ public class HeroBotAI : MonoBehaviour
             return;
         }
 
+        StopMoving();
+    }
+
+    private void OnMonsterDied(MonsterAI deadMonster)
+    {
+        if (deadMonster == null || targetMonster != deadMonster)
+            return;
+
+        targetMonster = null;
+        attackTimer = 0f;
+
+        // Không tiếp tục nhìn/chạy vào xác đang phát animation chết.
         StopMoving();
     }
 
@@ -193,11 +215,16 @@ public class HeroBotAI : MonoBehaviour
         if (upgradeStacks[(int)HeroUpgradeType.Execution] > 0 && targetMonster.HPPercent < 0.25f)
             damage *= 1f + 0.10f * upgradeStacks[(int)HeroUpgradeType.Execution];
 
-        float actual = targetMonster.TakeDamage(damage, false);
+        MonsterAI attackedMonster = targetMonster;
+        float actual = attackedMonster.TakeDamage(damage, false);
 
         float knock = 0.45f + 0.35f * upgradeStacks[(int)HeroUpgradeType.Knockback];
-        Vector3 push = (targetMonster.transform.position - transform.position).normalized;
-        targetMonster.ApplyKnockback(push * knock);
+        Vector3 push = (attackedMonster.transform.position - transform.position).normalized;
+
+        if (attackedMonster.IsAlive)
+            attackedMonster.ApplyKnockback(push * knock);
+        else if (targetMonster == attackedMonster)
+            targetMonster = null;
 
         int lifeSteal = upgradeStacks[(int)HeroUpgradeType.LifeSteal];
         if (lifeSteal > 0 && actual > 0f)
@@ -236,6 +263,13 @@ public class HeroBotAI : MonoBehaviour
         float effectiveArmor = Mathf.Clamp01(armor + 0.04f * upgradeStacks[(int)HeroUpgradeType.Armor]);
         float actual = Mathf.Min(currentHP, amount * (1f - effectiveArmor));
         currentHP -= actual;
+
+        DamagePopup.Spawn(
+            transform.position + Vector3.up * 2.05f,
+            actual,
+            DamagePopupKind.DamageToHero,
+            heavyHit);
+
         HeroDoomGameManager.Instance?.AddDamageGold(actual);
 
         if (currentHP <= 0f)
