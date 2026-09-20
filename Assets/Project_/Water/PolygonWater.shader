@@ -46,7 +46,6 @@ Shader "HeroDoom/Water/PolygonWater"
             {
                 float4 positionCS : SV_POSITION;
                 float3 positionWS : TEXCOORD0;
-                float wave : TEXCOORD1;
             };
 
             CBUFFER_START(UnityPerMaterial)
@@ -55,22 +54,41 @@ Shader "HeroDoom/Water/PolygonWater"
             float _Smoothness, _FresnelPower, _FresnelStrength, _CrestThreshold, _CrestSoftness;
             CBUFFER_END
 
+            float _HeroDoomRainIntensity;
+
             float WaveField(float2 p)
             {
                 float t = _Time.y;
                 float a = sin((p.x + p.y * 0.63) * _WaveScale + t * _WaveSpeed);
                 float b = sin((p.x * -0.42 + p.y) * _SecondaryScale - t * _SecondarySpeed);
                 float c = sin((p.x * 0.71 - p.y * 0.36) * (_WaveScale * 0.55) + t * (_WaveSpeed * 0.42));
-                return (a * 0.5 + b * 0.3 + c * 0.2);
+                return a * 0.5 + b * 0.3 + c * 0.2;
+            }
+
+            float Hash21(float2 p)
+            {
+                p = frac(p * float2(123.34, 456.21));
+                p += dot(p, p + 45.32);
+                return frac(p.x * p.y);
+            }
+
+            float RainRipple(float2 worldXZ)
+            {
+                float2 p = worldXZ * 0.85;
+                float2 cell = floor(p);
+                float2 local = frac(p) - 0.5;
+                float randomPhase = Hash21(cell);
+                float age = frac(_Time.y * 1.4 + randomPhase);
+                float radius = age * 0.48;
+                float ring = 1.0 - smoothstep(0.025, 0.07, abs(length(local) - radius));
+                return ring * (1.0 - age) * _HeroDoomRainIntensity;
             }
 
             Varyings vert(Attributes IN)
             {
                 Varyings OUT;
                 float3 ws = TransformObjectToWorld(IN.positionOS.xyz);
-                float wave = WaveField(ws.xz);
                 OUT.positionWS = ws;
-                OUT.wave = wave;
                 OUT.positionCS = TransformWorldToHClip(ws);
                 return OUT;
             }
@@ -93,9 +111,11 @@ Shader "HeroDoom/Water/PolygonWater"
                 float ndl = saturate(dot(normalWS, mainLight.direction));
                 float3 halfDir = SafeNormalize(mainLight.direction + viewDir);
                 float spec = pow(saturate(dot(normalWS, halfDir)), lerp(8.0, 128.0, _Smoothness));
+
+                float ripple = RainRipple(IN.positionWS.xz);
                 half3 rgb = water.rgb * (0.72 + ndl * 0.28);
                 rgb += mainLight.color * spec * (0.18 + fresnel * 0.5);
-                rgb = lerp(rgb, _FoamColor.rgb, crest * 0.16);
+                rgb = lerp(rgb, _FoamColor.rgb, crest * 0.16 + ripple * 0.65);
                 return half4(rgb, water.a);
             }
             ENDHLSL
