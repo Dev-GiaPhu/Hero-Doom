@@ -1,19 +1,20 @@
 using UnityEngine;
-using UnityEngine.Rendering.Universal; 
+using UnityEngine.Rendering.Universal;
 
 [RequireComponent(typeof(Light))]
 public class ProceduralCloudCookie : MonoBehaviour
 {
     private Light directionalLight;
     private UniversalAdditionalLightData urpLightData;
-    
-    [Header("Cloud Shadow Settings")]
-    public int resolution = 256;
-    public float scale = 5f;
-    [Range(0f, 1f)] 
-    public float cloudDarkness = 0.3f; // Độ nhạt/đậm của bóng mây (0.3 là bóng rất nhẹ)
+    private Texture2D cloudTexture;
 
-    [Header("Wind Speed")]
+    [Header("Cloud Shadow")]
+    [Range(64, 512)] public int resolution = 256;
+    [Min(0.1f)] public float scale = 5f;
+    [Range(0f, 1f)] public float cloudDarkness = 0.3f;
+    public Vector2 cookieSize = new Vector2(50f, 50f);
+
+    [Header("Wind")]
     public float scrollSpeedX = 0.05f;
     public float scrollSpeedY = 0.02f;
 
@@ -23,51 +24,66 @@ public class ProceduralCloudCookie : MonoBehaviour
     {
         directionalLight = GetComponent<Light>();
         urpLightData = GetComponent<UniversalAdditionalLightData>();
-
-        // Tự động sinh ảnh mây và gắn vào Cookie của đèn
-        directionalLight.cookie = GenerateCloudCookie();
-        
-        // Cài đặt độ to của mây bao phủ bản đồ
-        if (urpLightData != null)
-        {
-            urpLightData.lightCookieSize = new Vector2(50f, 50f); 
-        }
+        RebuildCookie();
+        if (urpLightData != null) urpLightData.lightCookieSize = cookieSize;
     }
 
     void Update()
     {
-        // Cuộn Cookie để tạo hiệu ứng gió thổi mây trôi
-        if (urpLightData != null)
-        {
-            currentOffset.x += scrollSpeedX * Time.deltaTime;
-            currentOffset.y += scrollSpeedY * Time.deltaTime;
-            urpLightData.lightCookieOffset = currentOffset;
-        }
+        if (urpLightData == null) return;
+        currentOffset.x = Mathf.Repeat(currentOffset.x + scrollSpeedX * Time.deltaTime, 1f);
+        currentOffset.y = Mathf.Repeat(currentOffset.y + scrollSpeedY * Time.deltaTime, 1f);
+        urpLightData.lightCookieOffset = currentOffset;
     }
 
-    Texture2D GenerateCloudCookie()
+    public void SetCloudDarkness(float darkness)
     {
-        Texture2D tex = new Texture2D(resolution, resolution, TextureFormat.RGBA32, false);
-        tex.wrapMode = TextureWrapMode.Repeat; // Để mây cuộn không bị đứt quãng
+        darkness = Mathf.Clamp01(darkness);
+        if (Mathf.Abs(cloudDarkness - darkness) < 0.025f) return;
+        cloudDarkness = darkness;
+        RebuildCookie();
+    }
 
-        Color32[] pixels = new Color32[resolution * resolution];
-        for (int y = 0; y < resolution; y++)
+    private void RebuildCookie()
+    {
+        if (directionalLight == null) directionalLight = GetComponent<Light>();
+        if (cloudTexture != null) Destroy(cloudTexture);
+        cloudTexture = GenerateSeamlessCloudCookie();
+        directionalLight.cookie = cloudTexture;
+    }
+
+    private Texture2D GenerateSeamlessCloudCookie()
+    {
+        int size = Mathf.Max(8, resolution);
+        Texture2D tex = new Texture2D(size, size, TextureFormat.RGBA32, false);
+        tex.name = "Runtime_SeamlessCloudCookie";
+        tex.wrapMode = TextureWrapMode.Repeat;
+        tex.filterMode = FilterMode.Bilinear;
+        Color32[] pixels = new Color32[size * size];
+
+        for (int y = 0; y < size; y++)
         {
-            for (int x = 0; x < resolution; x++)
+            float v = (float)y / size;
+            for (int x = 0; x < size; x++)
             {
-                float xCoord = (float)x / resolution * scale;
-                float yCoord = (float)y / resolution * scale;
-                
-                float noise = Mathf.PerlinNoise(xCoord, yCoord);
-                
-                // Trắng (255) là ánh sáng chiếu qua 100%. Xám là ánh sáng bị cản lại thành bóng mờ.
-                byte grayValue = (byte)Mathf.Lerp(255, 255 * (1f - cloudDarkness), noise);
-                
-                pixels[y * resolution + x] = new Color32(grayValue, grayValue, grayValue, 255);
+                float u = (float)x / size;
+                float n00 = Mathf.PerlinNoise(u * scale, v * scale);
+                float n10 = Mathf.PerlinNoise((u - 1f) * scale, v * scale);
+                float n01 = Mathf.PerlinNoise(u * scale, (v - 1f) * scale);
+                float n11 = Mathf.PerlinNoise((u - 1f) * scale, (v - 1f) * scale);
+                float noise = Mathf.Lerp(Mathf.Lerp(n00, n10, u), Mathf.Lerp(n01, n11, u), v);
+                byte gray = (byte)Mathf.RoundToInt(Mathf.Lerp(255f, 255f * (1f - cloudDarkness), noise));
+                pixels[y * size + x] = new Color32(gray, gray, gray, 255);
             }
         }
+
         tex.SetPixels32(pixels);
-        tex.Apply(false);
+        tex.Apply(false, false);
         return tex;
+    }
+
+    void OnDestroy()
+    {
+        if (cloudTexture != null) Destroy(cloudTexture);
     }
 }

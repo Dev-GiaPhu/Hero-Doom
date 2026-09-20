@@ -2,27 +2,38 @@ using UnityEngine;
 
 public class DayNightCycle3D : MonoBehaviour
 {
-    public Light directionalLight; 
-    public float dayDuration = 120f; // Thời gian 1 ngày trong game (giây)
-    
-    [Header("Sun Settings")]
-    public Gradient sunColor; 
-    public AnimationCurve sunIntensity; // Đỉnh cong cao nhất ở giữa trưa (0.5), thấp dần về đêm
+    [Header("Time")]
+    [Min(10f)] public float dayDuration = 120f;
+    [Range(0f, 1f)] public float startTime = 0.25f;
 
-    private float timeOfDay = 0f;
+    [Header("Sun")]
+    public Light directionalLight;
+    public Vector2 sunAngleRange = new Vector2(-90f, 270f);
+    public float sunYaw = 30f;
+    public Gradient sunColor;
+    public AnimationCurve sunIntensity;
+
+    public float TimeFraction { get; private set; }
+
+    void Awake()
+    {
+        TimeFraction = Mathf.Repeat(startTime, 1f);
+        ApplyLighting();
+    }
 
     void Update()
     {
-        timeOfDay += Time.deltaTime;
-        float timeFraction = timeOfDay / dayDuration;
-        if (timeFraction >= 1f) timeOfDay = 0f;
+        if (directionalLight == null || dayDuration <= 0f) return;
+        TimeFraction = Mathf.Repeat(TimeFraction + Time.deltaTime / dayDuration, 1f);
+        ApplyLighting();
+    }
 
-        // 1. Xoay góc Mặt trời (Trục X xoay từ -90 đến 270 để giả lập quỹ đạo)
-        float sunAngle = Mathf.Lerp(-90f, 270f, timeFraction);
-        directionalLight.transform.rotation = Quaternion.Euler(sunAngle, 30f, 0f);
-
-        // 2. Cập nhật màu và độ sáng
-        directionalLight.color = sunColor.Evaluate(timeFraction);
-        directionalLight.intensity = sunIntensity.Evaluate(timeFraction);
+    private void ApplyLighting()
+    {
+        if (directionalLight == null) return;
+        float sunAngle = Mathf.Lerp(sunAngleRange.x, sunAngleRange.y, TimeFraction);
+        directionalLight.transform.rotation = Quaternion.Euler(sunAngle, sunYaw, 0f);
+        directionalLight.color = sunColor.Evaluate(TimeFraction);
+        directionalLight.intensity = Mathf.Max(0f, sunIntensity.Evaluate(TimeFraction));
     }
 }

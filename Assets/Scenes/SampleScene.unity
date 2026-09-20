@@ -922,6 +922,7 @@ GameObject:
   - component: {fileID: 410087042}
   - component: {fileID: 410087044}
   - component: {fileID: 410087043}
+  - component: {fileID: 410087045}
   m_Layer: 0
   m_Name: Sun
   m_TagString: Untagged
@@ -1044,8 +1045,11 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 920fa0e96e9ed9141bd60cc6f74cbd4b, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  directionalLight: {fileID: 410087040}
   dayDuration: 120
+  startTime: 0.25
+  directionalLight: {fileID: 410087040}
+  sunAngleRange: {x: -90, y: 270}
+  sunYaw: 30
   sunColor:
     serializedVersion: 2
     key0: {r: 0.07903168, g: 0.08318954, b: 0.1509434, a: 1}
@@ -1109,6 +1113,35 @@ MonoBehaviour:
     m_PreInfinity: 2
     m_PostInfinity: 2
     m_RotationOrder: 4
+--- !u!114 &410087045
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 410087039}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 6c2f28f53cf64efb95d13c4210fbc4b7, type: 3}
+  m_Name:
+  m_EditorClassIdentifier:
+  startWeather: 0
+  minWeatherDuration: 45
+  maxWeatherDuration: 90
+  transitionDuration: 4
+  avoidImmediateRepeat: 1
+  sunnyWeight: 1
+  rainWeight: 1
+  fogWeight: 1
+  rainParticles: {fileID: 0}
+  groundRainSplashes: {fileID: 0}
+  waterRainRipples: {fileID: 0}
+  groundFogParticles: {fileID: 0}
+  cloudShadows: {fileID: 410087044}
+  sunnyCloudDarkness: 0.1
+  rainCloudDarkness: 0.45
+  fogCloudDarkness: 0.25
+
 --- !u!114 &410087044
 MonoBehaviour:
   m_ObjectHideFlags: 0
