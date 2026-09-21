@@ -1,15 +1,34 @@
-using System.Collections.Generic;
+using System;
 using UnityEngine;
 using UnityEngine.AI;
 using UnityEngine.EventSystems;
 using UnityEngine.InputSystem;
-using UnityEngine.UI;
 
 public class PlayerSpawner : MonoBehaviour
 {
-    [Header("4 Monster Prefabs")]
-    public GameObject[] monsterPrefabs = new GameObject[4];
-    public double[] monsterCosts = { 10d, 25d, 40d, 35d };
+    [Header("Monster 1 - Basic Melee")]
+    [Tooltip("Kéo prefab quái #1 vào đây.")]
+    public GameObject monster1Prefab;
+    public double monster1Cost = 10d;
+
+    [Header("Monster 2 - Mage")]
+    [Tooltip("Kéo prefab quái #2 vào đây.")]
+    public GameObject monster2Prefab;
+    public double monster2Cost = 25d;
+
+    [Header("Monster 3 - Tank")]
+    [Tooltip("Kéo ĐÚNG prefab Tank vào đây. Không tự động đoán prefab.")]
+    public GameObject monster3Prefab;
+    public double monster3Cost = 40d;
+
+    [Header("Monster 4 - Assassin")]
+    [Tooltip("Kéo ĐÚNG prefab Assassin vào đây. Không tự động đoán prefab.")]
+    public GameObject monster4Prefab;
+    public double monster4Cost = 35d;
+
+    [Header("Selection")]
+    [SerializeField, Range(0, 3)]
+    private int currentMonsterIndex = 0;
 
     [Header("Placement")]
     public LayerMask groundLayer;
@@ -17,25 +36,17 @@ public class PlayerSpawner : MonoBehaviour
     public float navMeshSampleRadius = 1.5f;
     [Range(0f, 4f)] public float spawnWaterClearance = 1.25f;
 
-    private int currentMonsterIndex;
+    public int SelectedMonsterIndex => currentMonsterIndex;
+    public event Action<int> SelectedMonsterChanged;
 
     private Camera mainCam;
     private InfiniteMapGenerator map;
-
-    private readonly List<Button> buttons = new();
-    private readonly List<Image> buttonImages = new();
-
-    private readonly Sprite[] normalIcons = new Sprite[4];
-    private readonly Sprite[] selectedIcons = new Sprite[4];
 
     void Start()
     {
         mainCam = Camera.main;
         map = FindFirstObjectByType<InfiniteMapGenerator>();
-
-        LoadMonsterIcons();
-        BindUIButtons();
-        UpdateButtonVisuals();
+        SelectedMonsterChanged?.Invoke(currentMonsterIndex);
     }
 
     void Update()
@@ -48,9 +59,7 @@ public class PlayerSpawner : MonoBehaviour
         {
             if (EventSystem.current != null &&
                 EventSystem.current.IsPointerOverGameObject())
-            {
                 return;
-            }
 
             SpawnMonster();
         }
@@ -60,17 +69,10 @@ public class PlayerSpawner : MonoBehaviour
     {
         if (Keyboard.current == null) return;
 
-        if (Keyboard.current.digit1Key.wasPressedThisFrame)
-            SelectMonster(0);
-
-        if (Keyboard.current.digit2Key.wasPressedThisFrame)
-            SelectMonster(1);
-
-        if (Keyboard.current.digit3Key.wasPressedThisFrame)
-            SelectMonster(2);
-
-        if (Keyboard.current.digit4Key.wasPressedThisFrame)
-            SelectMonster(3);
+        if (Keyboard.current.digit1Key.wasPressedThisFrame) SelectMonster(0);
+        if (Keyboard.current.digit2Key.wasPressedThisFrame) SelectMonster(1);
+        if (Keyboard.current.digit3Key.wasPressedThisFrame) SelectMonster(2);
+        if (Keyboard.current.digit4Key.wasPressedThisFrame) SelectMonster(3);
     }
 
     public void SelectMonster(int index)
@@ -78,122 +80,40 @@ public class PlayerSpawner : MonoBehaviour
         if (index < 0 || index >= 4) return;
 
         currentMonsterIndex = index;
-        UpdateButtonVisuals();
+        SelectedMonsterChanged?.Invoke(currentMonsterIndex);
     }
 
-    private void LoadMonsterIcons()
+    private GameObject GetSelectedPrefab()
     {
-        Sprite[] sprites =
-            Resources.LoadAll<Sprite>("Image/icon monsters");
-
-        Dictionary<string, Sprite> byName =
-            new Dictionary<string, Sprite>();
-
-        foreach (Sprite sprite in sprites)
+        return currentMonsterIndex switch
         {
-            if (sprite != null)
-                byName[sprite.name] = sprite;
-        }
-
-        string[] normalNames =
-        {
-            "icon monsters_0",
-            "icon monsters_1",
-            "icon monsters_2",
-            "icon monsters_3"
+            0 => monster1Prefab,
+            1 => monster2Prefab,
+            2 => monster3Prefab,
+            3 => monster4Prefab,
+            _ => null
         };
+    }
 
-        // Mapping đúng theo yêu cầu:
-        // Button 1 -> _4
-        // Button 2 -> _6
-        // Button 3 -> _5
-        // Button 4 -> _7
-        string[] selectedNames =
+    private double GetSelectedCost()
+    {
+        return currentMonsterIndex switch
         {
-            "icon monsters_4",
-            "icon monsters_6",
-            "icon monsters_5",
-            "icon monsters_7"
+            0 => monster1Cost,
+            1 => monster2Cost,
+            2 => monster3Cost,
+            3 => monster4Cost,
+            _ => 0d
         };
-
-        for (int i = 0; i < 4; i++)
-        {
-            byName.TryGetValue(normalNames[i], out normalIcons[i]);
-            byName.TryGetValue(selectedNames[i], out selectedIcons[i]);
-        }
-    }
-
-    private void BindUIButtons()
-    {
-        buttons.Clear();
-        buttonImages.Clear();
-
-        GameObject root = GameObject.Find("HUD Monsters");
-        if (root == null) return;
-
-        for (int i = 0; i < root.transform.childCount && buttons.Count < 4; i++)
-        {
-            Transform child = root.transform.GetChild(i);
-            Button button = child.GetComponent<Button>();
-
-            if (button == null)
-                continue;
-
-            int capturedIndex = buttons.Count;
-
-            buttons.Add(button);
-            buttonImages.Add(button.targetGraphic as Image ?? button.GetComponent<Image>());
-
-            button.onClick.RemoveAllListeners();
-            button.onClick.AddListener(
-                () => SelectMonster(capturedIndex));
-        }
-    }
-
-    private void UpdateButtonVisuals()
-    {
-        for (int i = 0; i < buttons.Count; i++)
-        {
-            bool selected =
-                i == currentMonsterIndex;
-
-            Image image =
-                i < buttonImages.Count
-                    ? buttonImages[i]
-                    : null;
-
-            if (image != null)
-            {
-                Sprite desired =
-                    selected
-                        ? selectedIcons[i]
-                        : normalIcons[i];
-
-                if (desired != null)
-                    image.sprite = desired;
-            }
-
-            buttons[i].transform.localScale =
-                selected
-                    ? Vector3.one * 1.06f
-                    : Vector3.one;
-        }
     }
 
     private void HandleMouseAim()
     {
-        if (mainCam == null || Mouse.current == null)
-            return;
+        if (mainCam == null || Mouse.current == null) return;
 
-        Ray ray =
-            mainCam.ScreenPointToRay(
-                Mouse.current.position.ReadValue());
+        Ray ray = mainCam.ScreenPointToRay(Mouse.current.position.ReadValue());
 
-        if (Physics.Raycast(
-                ray,
-                out RaycastHit hit,
-                500f,
-                groundLayer) &&
+        if (Physics.Raycast(ray, out RaycastHit hit, 500f, groundLayer) &&
             IsValidSpawn(hit.point))
         {
             if (crosshairIndicator != null)
@@ -210,33 +130,30 @@ public class PlayerSpawner : MonoBehaviour
 
     private void SpawnMonster()
     {
-        if (mainCam == null || Mouse.current == null)
-            return;
+        if (mainCam == null || Mouse.current == null) return;
 
-        if (monsterPrefabs == null ||
-            currentMonsterIndex >= monsterPrefabs.Length)
-        {
-            return;
-        }
-
-        GameObject prefab =
-            monsterPrefabs[currentMonsterIndex];
+        GameObject prefab = GetSelectedPrefab();
 
         if (prefab == null)
-            return;
-
-        Ray ray =
-            mainCam.ScreenPointToRay(
-                Mouse.current.position.ReadValue());
-
-        if (!Physics.Raycast(
-                ray,
-                out RaycastHit hit,
-                500f,
-                groundLayer))
         {
+            Debug.LogWarning(
+                $"[HeroDoom] Monster slot {currentMonsterIndex + 1} chưa được gán prefab trong PlayerSpawner Inspector.");
             return;
         }
+
+        MonsterAI prefabAI = prefab.GetComponent<MonsterAI>();
+
+        if (prefabAI == null)
+        {
+            Debug.LogError(
+                $"[HeroDoom] Prefab {prefab.name} chưa có MonsterAI. Gắn MonsterAI trực tiếp lên prefab để role/stats hiện trong Inspector.");
+            return;
+        }
+
+        Ray ray = mainCam.ScreenPointToRay(Mouse.current.position.ReadValue());
+
+        if (!Physics.Raycast(ray, out RaycastHit hit, 500f, groundLayer))
+            return;
 
         if (!IsValidSpawn(hit.point))
             return;
@@ -253,57 +170,32 @@ public class PlayerSpawner : MonoBehaviour
                 !map.IsSafeDistanceFromWater(
                     navHit.position,
                     spawnWaterClearance))
-            {
                 return;
-            }
 
             spawnPoint = navHit.position;
         }
 
-        double cost =
-            currentMonsterIndex < monsterCosts.Length
-                ? monsterCosts[currentMonsterIndex]
-                : 0d;
+        double cost = GetSelectedCost();
 
         if (HeroDoomGameManager.Instance != null &&
             !HeroDoomGameManager.Instance.SpendGold(cost))
-        {
             return;
-        }
 
-        GameObject go =
-            Instantiate(
-                prefab,
-                spawnPoint,
-                Quaternion.identity);
-
-        go.name =
-            $"Monster_{currentMonsterIndex + 1}_{prefab.name}";
-
+        GameObject go = Instantiate(prefab, spawnPoint, Quaternion.identity);
+        go.name = $"Monster_{currentMonsterIndex + 1}_{prefab.name}";
         go.tag = "Enemy";
 
-        MonsterAI ai =
-            go.GetComponent<MonsterAI>();
+        MonsterAI ai = go.GetComponent<MonsterAI>();
 
-        if (ai == null)
-            ai = go.AddComponent<MonsterAI>();
-
-        ai.ConfigureBySlot(currentMonsterIndex);
-
-        CapturePillarManager.Instance?.TryAssignGuard(
-            ai,
-            spawnPoint);
+        CapturePillarManager.Instance?.TryAssignGuard(ai, spawnPoint);
     }
 
     private bool IsValidSpawn(Vector3 point)
     {
-        if (map == null)
-            return true;
+        if (map == null) return true;
 
         return
             map.IsInsideWorld(point) &&
-            map.IsSafeDistanceFromWater(
-                point,
-                spawnWaterClearance);
+            map.IsSafeDistanceFromWater(point, spawnWaterClearance);
     }
 }

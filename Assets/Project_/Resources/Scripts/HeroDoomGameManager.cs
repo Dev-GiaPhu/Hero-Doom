@@ -1,6 +1,4 @@
 using UnityEngine;
-using UnityEngine.UI;
-using TMPro;
 
 public class HeroDoomGameManager : MonoBehaviour
 {
@@ -27,11 +25,7 @@ public class HeroDoomGameManager : MonoBehaviour
     public int HeroDeaths { get; private set; }
     public double Gold { get; private set; }
     public bool IsRespawning => respawnTimer > 0f;
-
-    private Slider heroSlider;
-    private TMP_Text heroHPText;
-    private TMP_Text goldText;
-    private TMP_Text soulText;
+    public float RespawnRemaining => Mathf.Max(0f, respawnTimer);
 
     private float respawnTimer;
     private Vector3 lastHeroDeathPosition;
@@ -46,43 +40,6 @@ public class HeroDoomGameManager : MonoBehaviour
 
         Instance = this;
         Gold = startingGold;
-
-        if (map == null)
-            map = FindFirstObjectByType<InfiniteMapGenerator>();
-
-        if (playerSpawner == null)
-            playerSpawner = FindFirstObjectByType<PlayerSpawner>();
-
-        if (pillarManager == null)
-            pillarManager = FindFirstObjectByType<CapturePillarManager>();
-
-        if (heroPrefab == null)
-            heroPrefab = Resources.Load<GameObject>("Prefabs/Charaters/Knight");
-
-        GameObject hpRoot = GameObject.Find("HeroHPBar");
-        if (hpRoot != null)
-        {
-            heroSlider = hpRoot.GetComponent<Slider>();
-            heroHPText = hpRoot.GetComponentInChildren<TMP_Text>(true);
-        }
-
-        // Coin và Soul là hai resource khác nhau.
-        // Gold chỉ được phép ghi vào Coins; Soul chưa có hệ thống thì giữ 0.
-        GameObject coinRoot = GameObject.Find("Coins");
-        if (coinRoot != null)
-            goldText = coinRoot.GetComponentInChildren<TMP_Text>(true);
-
-        GameObject soulRoot = GameObject.Find("Souls");
-        if (soulRoot != null)
-        {
-            soulText = soulRoot.GetComponentInChildren<TMP_Text>(true);
-
-            if (soulText != null)
-                soulText.text = "0";
-        }
-
-        if (goldText != null)
-            goldText.text = FormatNumber(Gold);
     }
 
     void Start()
@@ -106,8 +63,6 @@ public class HeroDoomGameManager : MonoBehaviour
             if (respawnTimer <= 0f)
                 SpawnHero(lastHeroDeathPosition);
         }
-
-        UpdateUI();
     }
 
     public void RegisterHero(HeroBotAI hero)
@@ -124,12 +79,13 @@ public class HeroDoomGameManager : MonoBehaviour
 
     public void NotifyHeroDied(HeroBotAI hero)
     {
-        if (hero == null || hero != CurrentHero || respawnTimer > 0f)
+        if (hero == null ||
+            hero != CurrentHero ||
+            respawnTimer > 0f)
             return;
 
         lastHeroDeathPosition = hero.transform.position;
         CurrentHero = null;
-
         HeroDeaths++;
         respawnTimer = Mathf.Max(0.1f, respawnDelay);
     }
@@ -138,7 +94,7 @@ public class HeroDoomGameManager : MonoBehaviour
     {
         if (heroPrefab == null)
         {
-            Debug.LogError("[HeroDoom] Không tìm thấy Knight hero prefab.");
+            Debug.LogError("[HeroDoom] Hero Prefab chưa được gán trong GameManager Inspector.");
             return;
         }
 
@@ -153,15 +109,18 @@ public class HeroDoomGameManager : MonoBehaviour
                 out spawn);
         }
 
-        GameObject go =
-            Instantiate(heroPrefab, spawn, Quaternion.identity);
-
+        GameObject go = Instantiate(heroPrefab, spawn, Quaternion.identity);
         go.name = "Hero";
 
         HeroBotAI ai = go.GetComponent<HeroBotAI>();
 
         if (ai == null)
-            ai = go.AddComponent<HeroBotAI>();
+        {
+            Debug.LogError(
+                "[HeroDoom] Hero prefab chưa có HeroBotAI. Gắn HeroBotAI trực tiếp lên prefab để chỉnh trong Inspector.");
+            Destroy(go);
+            return;
+        }
 
         RegisterHero(ai);
     }
@@ -185,9 +144,9 @@ public class HeroDoomGameManager : MonoBehaviour
         if (actualDamage <= 0f) return;
 
         Gold +=
-            actualDamage
-            * goldPerDamage
-            * GetGoldMultiplier();
+            actualDamage *
+            goldPerDamage *
+            GetGoldMultiplier();
     }
 
     public float GetGoldMultiplier()
@@ -195,44 +154,6 @@ public class HeroDoomGameManager : MonoBehaviour
         return pillarManager != null
             ? pillarManager.GoldMultiplier
             : 1f;
-    }
-
-    private void UpdateUI()
-    {
-        if (goldText != null)
-            goldText.text = FormatNumber(Gold);
-
-        if (CurrentHero != null && CurrentHero.IsAlive)
-        {
-            float ratio =
-                CurrentHero.MaxHP <= 0f
-                    ? 0f
-                    : CurrentHero.CurrentHP / CurrentHero.MaxHP;
-
-            if (heroSlider != null)
-                heroSlider.value = Mathf.Clamp01(ratio);
-
-            if (heroHPText != null)
-            {
-                heroHPText.text =
-                    $"{Mathf.CeilToInt(CurrentHero.CurrentHP)}/" +
-                    $"{Mathf.CeilToInt(CurrentHero.MaxHP)}  " +
-                    $"Lv.{CurrentHero.Level}";
-            }
-        }
-        else
-        {
-            if (heroSlider != null)
-                heroSlider.value = 0f;
-
-            if (heroHPText != null)
-            {
-                heroHPText.text =
-                    respawnTimer > 0f
-                        ? $"Respawn {respawnTimer:0.0}s"
-                        : "Hero defeated";
-            }
-        }
     }
 
     public static string FormatNumber(double value)
@@ -248,12 +169,8 @@ public class HeroDoomGameManager : MonoBehaviour
 
         if (abs < 1000d)
         {
-            string integerText =
-                System.Math.Floor(abs).ToString("0");
-
-            return negative
-                ? "-" + integerText
-                : integerText;
+            string integerText = System.Math.Floor(abs).ToString("0");
+            return negative ? "-" + integerText : integerText;
         }
 
         int tier = 0;
@@ -266,27 +183,22 @@ public class HeroDoomGameManager : MonoBehaviour
 
         if (tier == suffix.Length - 1 && abs >= 1000d)
         {
-            string scientific =
-                abs.ToString("0.###E+0");
-
-            return negative
-                ? "-" + scientific
-                : scientific;
+            string scientific = abs.ToString("0.###E+0");
+            return negative ? "-" + scientific : scientific;
         }
 
         double rounded =
-            System.Math.Round(abs, 1, System.MidpointRounding.AwayFromZero);
+            System.Math.Round(
+                abs,
+                1,
+                System.MidpointRounding.AwayFromZero);
 
         string format =
             System.Math.Abs(rounded - System.Math.Round(rounded)) < 0.0001d
                 ? "0"
                 : "0.0";
 
-        string result =
-            rounded.ToString(format) + suffix[tier];
-
-        return negative
-            ? "-" + result
-            : result;
+        string result = rounded.ToString(format) + suffix[tier];
+        return negative ? "-" + result : result;
     }
 }
