@@ -2,18 +2,25 @@ Shader "HeroDoom/Weather/FogLayer"
 {
     Properties
     {
-        _NoiseTex ("Noise Map", 2D) = "gray" {}
+        _ShapeNoiseTex ("Shape Noise Map", 2D) = "gray" {}
+        _DetailNoiseTex ("Detail Noise Map", 2D) = "gray" {}
+
         _FogColor ("Fog Color", Color) = (0.72, 0.78, 0.80, 1)
         _Density ("Density", Range(0, 1)) = 0
-        _NoiseScale ("Noise Scale", Range(0.01, 1)) = 0.11
-        _DetailScale ("Detail Scale", Range(0.2, 4)) = 1.85
-        _DetailStrength ("Detail Strength", Range(0, 1)) = 0.38
-        _Contrast ("Contrast", Range(0.25, 4)) = 1.55
-        _Softness ("Patch Softness", Range(0.01, 0.5)) = 0.16
-        _MoveSpeed ("Move Speed XY", Vector) = (0.012, 0.007, 0, 0)
-        _DetailMoveSpeed ("Detail Move Speed XY", Vector) = (-0.006, 0.011, 0, 0)
-        _EdgeFade ("Edge Fade", Range(0.02, 0.5)) = 0.18
-        _Opacity ("Max Opacity", Range(0, 1)) = 0.58
+        _FogOpacity ("Fog Opacity", Range(0, 1)) = 0.52
+        _PatchSize ("Fog Patch Size", Range(1, 80)) = 24
+        _EdgeSoftness ("Edge Softness", Range(0.01, 0.45)) = 0.2
+        _FogContrast ("Fog Contrast", Range(0.4, 3)) = 1.25
+
+        _EdgeDetailScale ("Edge Detail Scale", Range(1, 8)) = 2.4
+        _EdgeDetailStrength ("Edge Detail Strength", Range(0, 0.75)) = 0.28
+        _MicroDetailScale ("Micro Detail Scale", Range(2, 16)) = 5.5
+        _MicroDetailStrength ("Micro Detail Strength", Range(0, 0.3)) = 0.08
+
+        _WindSpeed ("Wind Speed XZ", Vector) = (0.006, 0.0025, 0, 0)
+        _MorphSpeed ("Morph Speed", Range(0, 0.15)) = 0.018
+        _MorphStrength ("Morph Strength", Range(0, 1)) = 0.32
+        _EdgeFade ("Layer Edge Fade", Range(0.02, 0.5)) = 0.16
     }
 
     SubShader
@@ -38,21 +45,29 @@ Shader "HeroDoom/Weather/FogLayer"
 
             #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/Core.hlsl"
 
-            TEXTURE2D(_NoiseTex);
-            SAMPLER(sampler_NoiseTex);
+            TEXTURE2D(_ShapeNoiseTex);
+            SAMPLER(sampler_ShapeNoiseTex);
+
+            TEXTURE2D(_DetailNoiseTex);
+            SAMPLER(sampler_DetailNoiseTex);
 
             CBUFFER_START(UnityPerMaterial)
             float4 _FogColor;
             float _Density;
-            float _NoiseScale;
-            float _DetailScale;
-            float _DetailStrength;
-            float _Contrast;
-            float _Softness;
-            float4 _MoveSpeed;
-            float4 _DetailMoveSpeed;
+            float _FogOpacity;
+            float _PatchSize;
+            float _EdgeSoftness;
+            float _FogContrast;
+
+            float _EdgeDetailScale;
+            float _EdgeDetailStrength;
+            float _MicroDetailScale;
+            float _MicroDetailStrength;
+
+            float4 _WindSpeed;
+            float _MorphSpeed;
+            float _MorphStrength;
             float _EdgeFade;
-            float _Opacity;
             CBUFFER_END
 
             struct Attributes
@@ -71,100 +86,114 @@ Shader "HeroDoom/Weather/FogLayer"
             Varyings vert(Attributes input)
             {
                 Varyings output;
-
-                output.positionWS =
-                    TransformObjectToWorld(
-                        input.positionOS.xyz);
-
-                output.positionCS =
-                    TransformWorldToHClip(
-                        output.positionWS);
-
+                output.positionWS = TransformObjectToWorld(input.positionOS.xyz);
+                output.positionCS = TransformWorldToHClip(output.positionWS);
                 output.uv = input.uv;
-
                 return output;
             }
 
             half4 frag(Varyings input) : SV_Target
             {
                 float time = _Time.y;
+                float2 windOffset = _WindSpeed.xy * time;
 
-                float2 worldUV =
-                    input.positionWS.xz *
-                    _NoiseScale;
+                float2 baseUV =
+                    input.positionWS.xz /
+                    max(1.0, _PatchSize);
 
-                float2 uvA =
-                    worldUV +
-                    _MoveSpeed.xy *
-                    time;
+                float morphTime = time * _MorphSpeed;
 
-                float2 uvB =
-                    worldUV *
-                    _DetailScale +
-                    _DetailMoveSpeed.xy *
-                    time;
+                float2 morphOffsetA =
+                    float2(
+                        sin(morphTime * 0.83),
+                        cos(morphTime * 0.67))
+                    * 0.11 * _MorphStrength;
 
-                float noiseA =
+                float2 morphOffsetB =
+                    float2(
+                        cos(morphTime * 0.51 + 1.7),
+                        sin(morphTime * 0.74 + 0.9))
+                    * 0.09 * _MorphStrength;
+
+                float shapeA =
                     SAMPLE_TEXTURE2D(
-                        _NoiseTex,
-                        sampler_NoiseTex,
-                        uvA).r;
+                        _ShapeNoiseTex,
+                        sampler_ShapeNoiseTex,
+                        baseUV + windOffset + morphOffsetA).r;
 
-                float noiseB =
+                float shapeB =
                     SAMPLE_TEXTURE2D(
-                        _NoiseTex,
-                        sampler_NoiseTex,
-                        uvB).r;
+                        _ShapeNoiseTex,
+                        sampler_ShapeNoiseTex,
+                        baseUV * 1.17
+                            - windOffset * 0.37
+                            + float2(0.37, 0.19)
+                            + morphOffsetB).r;
 
-                float noise =
+                float shape =
                     lerp(
-                        noiseA,
-                        noiseA * noiseB,
-                        _DetailStrength);
+                        shapeA,
+                        (shapeA + shapeB) * 0.5,
+                        _MorphStrength * 0.62);
 
-                noise =
+                float detail =
+                    SAMPLE_TEXTURE2D(
+                        _DetailNoiseTex,
+                        sampler_DetailNoiseTex,
+                        baseUV * _EdgeDetailScale
+                            + windOffset * 0.63
+                            + float2(0.13, 0.41)).r;
+
+                float micro =
+                    SAMPLE_TEXTURE2D(
+                        _DetailNoiseTex,
+                        sampler_DetailNoiseTex,
+                        baseUV * _MicroDetailScale
+                            - windOffset * 0.31
+                            + float2(0.61, 0.27)).r;
+
+                float field =
+                    shape
+                    + (detail - 0.5) * _EdgeDetailStrength
+                    + (micro - 0.5) * _MicroDetailStrength;
+
+                field =
                     pow(
-                        saturate(noise),
-                        _Contrast);
+                        saturate(field),
+                        _FogContrast);
 
                 float threshold =
                     lerp(
                         0.78,
-                        0.34,
+                        0.32,
                         saturate(_Density));
 
-                float patch =
+                float fogPatch =
                     smoothstep(
-                        threshold - _Softness,
-                        threshold + _Softness,
-                        noise);
+                        threshold - _EdgeSoftness,
+                        threshold + _EdgeSoftness,
+                        field);
 
                 float2 centered =
-                    abs(input.uv - 0.5) *
-                    2.0;
+                    abs(input.uv - 0.5) * 2.0;
 
                 float edgeDistance =
-                    max(
-                        centered.x,
-                        centered.y);
+                    max(centered.x, centered.y);
 
-                float edgeFade =
-                    1.0 -
-                    smoothstep(
+                float layerEdge =
+                    1.0
+                    - smoothstep(
                         1.0 - _EdgeFade,
                         1.0,
                         edgeDistance);
 
                 float alpha =
-                    patch *
-                    edgeFade *
-                    _Opacity *
-                    saturate(
-                        _Density * 1.35);
+                    fogPatch
+                    * layerEdge
+                    * _FogOpacity
+                    * saturate(_Density * 1.28);
 
-                return half4(
-                    _FogColor.rgb,
-                    alpha);
+                return half4(_FogColor.rgb, alpha);
             }
 
             ENDHLSL

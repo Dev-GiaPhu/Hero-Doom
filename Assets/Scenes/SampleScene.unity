@@ -2470,26 +2470,39 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: e0714cb57d3c4c0d856d1c0e51116f30, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: 
+  m_Name:
+  m_EditorClassIdentifier:
   weather: {fileID: 410087045}
   targetCamera: {fileID: 330585545}
   fogRenderer: {fileID: 900100004}
   fogMaterial: {fileID: 2100000, guid: e2714cb57d3c4c0d856d1c0e51116f32, type: 2}
-  noiseMap: {fileID: 0}
-  generateNoiseIfMissing: 1
+  shapeNoiseMap: {fileID: 0}
+  detailNoiseMap: {fileID: 0}
+  generateMissingNoise: 1
   generatedNoiseResolution: 256
-  generatedNoiseScale: 5
   generatedNoiseSeed: 1337
-  areaSize: 80
-  heightAboveGround: 3
+  generatedShapeNoiseScale: 2.8
+  generatedDetailNoiseScale: 8
+  areaSize: 90
+  heightAboveGround: 2.2
   cameraForwardOffset: 8
   followCamera: 1
-  fogDensity: 0.42
-  visibilityMultiplier: 1.25
-  fadeSpeed: 0.35
+  fogPatchSize: 24
+  fogDensity: 0.48
+  fogOpacity: 0.52
+  edgeSoftness: 0.2
+  fogContrast: 1.25
+  fogColor: {r: 0.72, g: 0.78, b: 0.8, a: 1}
+  edgeDetailScale: 2.4
+  edgeDetailStrength: 0.28
+  microDetailScale: 5.5
+  microDetailStrength: 0.08
+  windSpeed: {x: 0.006, y: 0.0025}
+  morphSpeed: 0.018
+  morphStrength: 0.32
+  fadeSpeed: 0.3
   previewInEditMode: 1
-  editModePreviewDensity: 0.28
+  editModePreviewDensity: 0.36
 --- !u!1 &1100291258
 GameObject:
   m_ObjectHideFlags: 0
@@ -2983,6 +2996,7 @@ MonoBehaviour:
     serializedVersion: 2
     m_Bits: 8
   crosshairIndicator: {fileID: 1924565668}
+  crosshairHeightOffset: 0.12
   navMeshSampleRadius: 1.5
   spawnWaterClearance: 1.25
 --- !u!4 &1350396453

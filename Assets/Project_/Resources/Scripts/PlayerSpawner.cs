@@ -33,6 +33,10 @@ public class PlayerSpawner : MonoBehaviour
     [Header("Placement")]
     public LayerMask groundLayer;
     public Transform crosshairIndicator;
+
+    [Tooltip("Độ cao cộng thêm cho crosshair so với điểm raycast trên mặt đất. Tăng nếu marker bị chìm dưới map.")]
+    [Range(-1f, 3f)] public float crosshairHeightOffset = 0.12f;
+
     public float navMeshSampleRadius = 1.5f;
     [Range(0f, 4f)] public float spawnWaterClearance = 1.25f;
 
@@ -119,7 +123,8 @@ public class PlayerSpawner : MonoBehaviour
             if (crosshairIndicator != null)
             {
                 crosshairIndicator.gameObject.SetActive(true);
-                crosshairIndicator.position = hit.point;
+                crosshairIndicator.position =
+                    hit.point + Vector3.up * crosshairHeightOffset;
             }
         }
         else if (crosshairIndicator != null)
