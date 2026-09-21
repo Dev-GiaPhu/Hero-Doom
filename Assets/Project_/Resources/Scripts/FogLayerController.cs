@@ -24,7 +24,10 @@ public class FogLayerController : MonoBehaviour
     public bool followCamera = true;
 
     [Header("Density / Transition")]
+    [Tooltip("Độ dày sương khi Weather = Fog.")]
     [Range(0f, 1f)] public float fogDensity = 0.42f;
+    [Tooltip("Nhân độ hiển thị cuối cùng nếu sương quá mờ trong camera top-down.")]
+    [Range(0.5f, 2f)] public float visibilityMultiplier = 1.25f;
     [Min(0.05f)] public float fadeSpeed = 0.35f;
 
     [Header("Editor Preview")]
@@ -147,7 +150,7 @@ public class FogLayerController : MonoBehaviour
             new Texture2D(
                 size,
                 size,
-                TextureFormat.R8,
+                TextureFormat.RGBA32,
                 true,
                 true);
 
@@ -267,7 +270,7 @@ public class FogLayerController : MonoBehaviour
         propertyBlock.SetFloat(
             Density,
             Mathf.Clamp01(
-                currentDensity));
+                currentDensity * visibilityMultiplier));
 
         fogRenderer.SetPropertyBlock(
             propertyBlock);

@@ -1126,6 +1126,8 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   startWeather: 0
+  forceWeatherInPlayMode: 0
+  forcedWeather: 1
   minWeatherDuration: 45
   maxWeatherDuration: 90
   transitionDuration: 4
@@ -2475,6 +2477,7 @@ MonoBehaviour:
   cameraForwardOffset: 8
   followCamera: 1
   fogDensity: 0.42
+  visibilityMultiplier: 1.25
   fadeSpeed: 0.35
   previewInEditMode: 1
   editModePreviewDensity: 0.28
@@ -3064,6 +3067,13 @@ MonoBehaviour:
   groundMask:
     serializedVersion: 2
     m_Bits: 8
+  rainEmissionRate: 420
+  rainColor: {r: 0.34, g: 0.46, b: 0.58, a: 0.34}
+  rainSizeRange: {x: 0.022, y: 0.042}
+  rainFallSpeedRange: {x: 18, y: 24}
+  rainStreakLength: 3.8
+  rainVelocityScale: 0.04
+  splashRate: 13
 --- !u!1 &1529027651
 GameObject:
   m_ObjectHideFlags: 0

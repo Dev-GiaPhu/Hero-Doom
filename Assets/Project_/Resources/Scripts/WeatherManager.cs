@@ -12,6 +12,11 @@ public class WeatherManager : MonoBehaviour
 {
     [Header("Weather Cycle")]
     public WeatherType startWeather = WeatherType.Sunny;
+
+    [Header("Inspector Test")]
+    [Tooltip("Bật khi Play để ép thời tiết, tiện test Rain/Fog ngay mà không chờ random.")]
+    public bool forceWeatherInPlayMode = false;
+    public WeatherType forcedWeather = WeatherType.Rain;
     [Min(5f)] public float minWeatherDuration = 45f;
     [Min(5f)] public float maxWeatherDuration = 90f;
     [Min(0.1f)] public float transitionDuration = 4f;
@@ -98,10 +103,18 @@ public class WeatherManager : MonoBehaviour
 
     void Update()
     {
-        weatherTimer -= Time.deltaTime;
+        if (forceWeatherInPlayMode)
+        {
+            if (CurrentWeather != forcedWeather)
+                ChangeWeather(forcedWeather);
+        }
+        else
+        {
+            weatherTimer -= Time.deltaTime;
 
-        if (weatherTimer <= 0f)
-            ChangeWeather(PickNext());
+            if (weatherTimer <= 0f)
+                ChangeWeather(PickNext());
+        }
 
         if (transitionTimer < transitionDuration)
         {

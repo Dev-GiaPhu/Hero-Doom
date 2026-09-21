@@ -12,6 +12,17 @@ public class WeatherVFXController : MonoBehaviour
     public float effectRadius = 22f;
     public LayerMask groundMask;
 
+    [Header("Rain Visual")]
+    [Min(0f)] public float rainEmissionRate = 420f;
+    public Color rainColor = new Color(0.34f, 0.46f, 0.58f, 0.34f);
+    public Vector2 rainSizeRange = new Vector2(0.022f, 0.042f);
+    public Vector2 rainFallSpeedRange = new Vector2(18f, 24f);
+    [Range(0.5f, 8f)] public float rainStreakLength = 3.8f;
+    [Range(0.005f, 0.15f)] public float rainVelocityScale = 0.04f;
+
+    [Header("Ground Splash")]
+    [Min(0f)] public float splashRate = 13f;
+
     private ParticleSystem rain;
     private ParticleSystem splashes;
 
@@ -60,7 +71,7 @@ public class WeatherVFXController : MonoBehaviour
                     cam.z + 4f);
         }
 
-        SetEmission(rain, 280f * rainIntensity);
+        SetEmission(rain, rainEmissionRate * rainIntensity);
 
         Shader.SetGlobalFloat(
             "_HeroDoomRainIntensity",
@@ -74,7 +85,7 @@ public class WeatherVFXController : MonoBehaviour
         rainMaterial =
             CreateTransparentParticleMaterial(
                 CreateStreakTexture(),
-                new Color(0.34f, 0.46f, 0.58f, 0.24f));
+                rainColor);
 
         splashMaterial =
             CreateTransparentParticleMaterial(
@@ -93,7 +104,10 @@ public class WeatherVFXController : MonoBehaviour
         main.simulationSpace = ParticleSystemSimulationSpace.World;
         main.startLifetime = new ParticleSystem.MinMaxCurve(1.05f, 1.35f);
         main.startSpeed = 0f;
-        main.startSize = new ParticleSystem.MinMaxCurve(0.018f, 0.036f);
+        main.startSize =
+            new ParticleSystem.MinMaxCurve(
+                Mathf.Min(rainSizeRange.x, rainSizeRange.y),
+                Mathf.Max(rainSizeRange.x, rainSizeRange.y));
         main.maxParticles = 1600;
         main.startColor = new Color(1f, 1f, 1f, 0.85f);
 
@@ -104,12 +118,21 @@ public class WeatherVFXController : MonoBehaviour
 
         var velocity = rain.velocityOverLifetime;
         velocity.enabled = true;
-        velocity.y = new ParticleSystem.MinMaxCurve(-22f, -18f);
+        velocity.space = ParticleSystemSimulationSpace.World;
+
+        // Unity yêu cầu X/Y/Z của VelocityOverLifetime dùng cùng một curve mode.
+        // Set cả 3 về TwoConstants để tránh:
+        // "Particle Velocity curves must all be in the same mode".
+        float minFall = Mathf.Min(rainFallSpeedRange.x, rainFallSpeedRange.y);
+        float maxFall = Mathf.Max(rainFallSpeedRange.x, rainFallSpeedRange.y);
+        velocity.x = new ParticleSystem.MinMaxCurve(0f, 0f);
+        velocity.y = new ParticleSystem.MinMaxCurve(-maxFall, -minFall);
+        velocity.z = new ParticleSystem.MinMaxCurve(0f, 0f);
 
         var renderer = rain.GetComponent<ParticleSystemRenderer>();
         renderer.renderMode = ParticleSystemRenderMode.Stretch;
-        renderer.lengthScale = 3.5f;
-        renderer.velocityScale = 0.035f;
+        renderer.lengthScale = rainStreakLength;
+        renderer.velocityScale = rainVelocityScale;
         renderer.material = rainMaterial;
     }
 
@@ -176,7 +199,7 @@ public class WeatherVFXController : MonoBehaviour
         if (splashes == null || rainIntensity <= 0.01f)
             return;
 
-        splashBudget += rainIntensity * 11f * Time.deltaTime;
+        splashBudget += rainIntensity * splashRate * Time.deltaTime;
 
         int emitCount =
             Mathf.Min(3, Mathf.FloorToInt(splashBudget));
