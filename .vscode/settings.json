@@ -67,6 +67,6 @@
         "*.sln": "*.csproj",
         "*.slnx": "*.csproj"
     },
-    "dotnet.defaultSolution": "Hero Doom.sln",
+    "dotnet.defaultSolution": "Hero-Doom.sln",
     "dotnet.enableWorkspaceBasedDevelopment": false
 }
