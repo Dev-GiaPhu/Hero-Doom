@@ -1669,13 +1669,19 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 2156aa2025f9743238b882118ff6ce7f, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  maxHP: 50
+  maxHP: 200
   currentHP: 0
   moveSpeed: 4
   rotationSpeed: 15
+  attackDamage: 20
   attackRange: 2
   attackCooldown: 1
   searchRadius: 20
+  armor: 0.05
+  xpPickupSearchRadius: 14
+  basePickupRadius: 1.2
+  corpseHoldTime: 2.5
+  shrinkDuration: 1.25
 --- !u!1 &7673255511206001353
 GameObject:
   m_ObjectHideFlags: 0

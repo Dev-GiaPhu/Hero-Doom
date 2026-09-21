@@ -2247,8 +2247,8 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: d1714cb57d3c4c0d856d1c0e51116f21, type: 3}
-  m_Name:
-  m_EditorClassIdentifier:
+  m_Name: 
+  m_EditorClassIdentifier: 
   playerSpawner: {fileID: 1350396452}
   slots:
   - button: {fileID: 2143790242}
@@ -2268,7 +2268,6 @@ MonoBehaviour:
     normalSprite: {fileID: 1930990730, guid: c173592673edd0b40a2a732360051046, type: 3}
     selectedSprite: {fileID: 1423632969, guid: c173592673edd0b40a2a732360051046, type: 3}
   selectedScale: 1.06
-
 --- !u!1 &832575517
 GameObject:
   m_ObjectHideFlags: 0
@@ -2354,6 +2353,122 @@ RectTransform:
   m_AnchoredPosition: {x: 0, y: 0}
   m_SizeDelta: {x: 0, y: 0}
   m_Pivot: {x: 0.5, y: 0.5}
+--- !u!1 &900100001
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 900100002}
+  - component: {fileID: 900100003}
+  - component: {fileID: 900100004}
+  - component: {fileID: 900100005}
+  m_Layer: 0
+  m_Name: Fog Layer
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!4 &900100002
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 900100001}
+  serializedVersion: 2
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: 0, y: 3, z: 0}
+  m_LocalScale: {x: 8, y: 1, z: 8}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 0}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!33 &900100003
+MeshFilter:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 900100001}
+  m_Mesh: {fileID: 10209, guid: 0000000000000000e000000000000000, type: 0}
+--- !u!23 &900100004
+MeshRenderer:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 900100001}
+  m_Enabled: 1
+  m_CastShadows: 0
+  m_ReceiveShadows: 0
+  m_DynamicOccludee: 0
+  m_StaticShadowCaster: 0
+  m_MotionVectors: 0
+  m_LightProbeUsage: 0
+  m_ReflectionProbeUsage: 0
+  m_RayTracingMode: 0
+  m_RayTraceProcedural: 0
+  m_RayTracingAccelStructBuildFlagsOverride: 0
+  m_RayTracingAccelStructBuildFlags: 1
+  m_SmallMeshCulling: 0
+  m_RenderingLayerMask: 1
+  m_RendererPriority: 0
+  m_Materials:
+  - {fileID: 2100000, guid: e2714cb57d3c4c0d856d1c0e51116f32, type: 2}
+  m_StaticBatchInfo:
+    firstSubMesh: 0
+    subMeshCount: 0
+  m_StaticBatchRoot: {fileID: 0}
+  m_ProbeAnchor: {fileID: 0}
+  m_LightProbeVolumeOverride: {fileID: 0}
+  m_ScaleInLightmap: 0
+  m_ReceiveGI: 0
+  m_PreserveUVs: 0
+  m_IgnoreNormalsForChartDetection: 0
+  m_ImportantGI: 0
+  m_StitchLightmapSeams: 0
+  m_SelectedEditorRenderState: 3
+  m_MinimumChartSize: 4
+  m_AutoUVMaxDistance: 0.5
+  m_AutoUVMaxAngle: 89
+  m_LightmapParameters: {fileID: 0}
+  m_SortingLayerID: 0
+  m_SortingLayer: 0
+  m_SortingOrder: 0
+  m_AdditionalVertexStreams: {fileID: 0}
+--- !u!114 &900100005
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 900100001}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: e0714cb57d3c4c0d856d1c0e51116f30, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  weather: {fileID: 410087045}
+  targetCamera: {fileID: 330585545}
+  fogRenderer: {fileID: 900100004}
+  fogMaterial: {fileID: 2100000, guid: e2714cb57d3c4c0d856d1c0e51116f32, type: 2}
+  noiseMap: {fileID: 0}
+  generateNoiseIfMissing: 1
+  generatedNoiseResolution: 256
+  generatedNoiseScale: 5
+  generatedNoiseSeed: 1337
+  areaSize: 80
+  heightAboveGround: 3
+  cameraForwardOffset: 8
+  followCamera: 1
+  fogDensity: 0.42
+  fadeSpeed: 0.35
+  previewInEditMode: 1
+  editModePreviewDensity: 0.28
 --- !u!1 &1100291258
 GameObject:
   m_ObjectHideFlags: 0
@@ -2441,13 +2556,12 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: d3714cb57d3c4c0d856d1c0e51116f23, type: 3}
-  m_Name:
-  m_EditorClassIdentifier:
+  m_Name: 
+  m_EditorClassIdentifier: 
   coinText: {fileID: 1266429800}
   soulText: {fileID: 1563082106}
   gameManager: {fileID: 1350396454}
   displayedSouls: 0
-
 --- !u!1 &1216932917
 GameObject:
   m_ObjectHideFlags: 0
@@ -2795,14 +2909,13 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: d2714cb57d3c4c0d856d1c0e51116f22, type: 3}
-  m_Name:
-  m_EditorClassIdentifier:
+  m_Name: 
+  m_EditorClassIdentifier: 
   healthSlider: {fileID: 1282748008}
   healthText: {fileID: 315142498}
   gameManager: {fileID: 1350396454}
   showLevel: 1
   respawnPrefix: Respawn
-
 --- !u!1 &1350396451
 GameObject:
   m_ObjectHideFlags: 0
@@ -2834,16 +2947,16 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: 3c6903315431149d4b4ab3030ffbced9, type: 3}
-  m_Name:
-  m_EditorClassIdentifier:
+  m_Name: 
+  m_EditorClassIdentifier: 
   monster1Prefab: {fileID: 4273521104092458544, guid: 18492b6b0c0bd2b419842985b06ab80c, type: 3}
-  monster1Cost: 10
+  monster1Cost: 20
   monster2Prefab: {fileID: 7849558439264195013, guid: 84466f446e74fc1448f85f2f4137a3f0, type: 3}
-  monster2Cost: 25
-  monster3Prefab: {fileID: 0}
-  monster3Cost: 40
-  monster4Prefab: {fileID: 0}
-  monster4Cost: 35
+  monster2Cost: 50
+  monster3Prefab: {fileID: 5331539268546560949, guid: 908fd25bcbf78204ba2e63b9195f995d, type: 3}
+  monster3Cost: 100
+  monster4Prefab: {fileID: 2007613504270089577, guid: c0ee1dd81d4a88740976bb1cec1e907d, type: 3}
+  monster4Cost: 75
   currentMonsterIndex: 0
   groundLayer:
     serializedVersion: 2
@@ -2879,10 +2992,10 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   heroPrefab: {fileID: 7592019447709997584, guid: beda0f40c91354517862218b802ce9c4, type: 3}
-  baseHeroHP: 500
+  baseHeroHP: 200
   heroHPPerDeath: 75
   respawnDelay: 5
-  respawnSearchRadius: 10
+  respawnSearchRadius: 20
   startingGold: 50
   passiveGoldPerSecond: 2
   goldPerDamage: 0.5
@@ -2918,7 +3031,7 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   pillarCount: 3
   captureRadius: 4
-  goldBonusPerCapturedPillar: 0.25
+  goldBonusPerCapturedPillar: 0.1
   relocateInterval: 120
   edgePadding: 12
   map: {fileID: 403880879}
@@ -3907,120 +4020,4 @@ SceneRoots:
   - {fileID: 403880880}
   - {fileID: 705559070}
   - {fileID: 2109007258}
-
---- !u!1 &900100001
-GameObject:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  serializedVersion: 6
-  m_Component:
-  - component: {fileID: 900100002}
-  - component: {fileID: 900100003}
-  - component: {fileID: 900100004}
-  - component: {fileID: 900100005}
-  m_Layer: 0
-  m_Name: Fog Layer
-  m_TagString: Untagged
-  m_Icon: {fileID: 0}
-  m_NavMeshLayer: 0
-  m_StaticEditorFlags: 0
-  m_IsActive: 1
---- !u!4 &900100002
-Transform:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 900100001}
-  serializedVersion: 2
-  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
-  m_LocalPosition: {x: 0, y: 3, z: 0}
-  m_LocalScale: {x: 8, y: 1, z: 8}
-  m_ConstrainProportionsScale: 0
-  m_Children: []
-  m_Father: {fileID: 0}
-  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
---- !u!33 &900100003
-MeshFilter:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 900100001}
-  m_Mesh: {fileID: 10209, guid: 0000000000000000e000000000000000, type: 0}
---- !u!23 &900100004
-MeshRenderer:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 900100001}
-  m_Enabled: 1
-  m_CastShadows: 0
-  m_ReceiveShadows: 0
-  m_DynamicOccludee: 0
-  m_StaticShadowCaster: 0
-  m_MotionVectors: 0
-  m_LightProbeUsage: 0
-  m_ReflectionProbeUsage: 0
-  m_RayTracingMode: 0
-  m_RayTraceProcedural: 0
-  m_RayTracingAccelStructBuildFlagsOverride: 0
-  m_RayTracingAccelStructBuildFlags: 1
-  m_SmallMeshCulling: 0
-  m_RenderingLayerMask: 1
-  m_RendererPriority: 0
-  m_Materials:
-  - {fileID: 2100000, guid: e2714cb57d3c4c0d856d1c0e51116f32, type: 2}
-  m_StaticBatchInfo:
-    firstSubMesh: 0
-    subMeshCount: 0
-  m_StaticBatchRoot: {fileID: 0}
-  m_ProbeAnchor: {fileID: 0}
-  m_LightProbeVolumeOverride: {fileID: 0}
-  m_ScaleInLightmap: 0
-  m_ReceiveGI: 0
-  m_PreserveUVs: 0
-  m_IgnoreNormalsForChartDetection: 0
-  m_ImportantGI: 0
-  m_StitchLightmapSeams: 0
-  m_SelectedEditorRenderState: 3
-  m_MinimumChartSize: 4
-  m_AutoUVMaxDistance: 0.5
-  m_AutoUVMaxAngle: 89
-  m_LightmapParameters: {fileID: 0}
-  m_SortingLayerID: 0
-  m_SortingLayer: 0
-  m_SortingOrder: 0
-  m_AdditionalVertexStreams: {fileID: 0}
---- !u!114 &900100005
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 900100001}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: e0714cb57d3c4c0d856d1c0e51116f30, type: 3}
-  m_Name:
-  m_EditorClassIdentifier:
-  weather: {fileID: 410087045}
-  targetCamera: {fileID: 330585545}
-  fogRenderer: {fileID: 900100004}
-  fogMaterial: {fileID: 2100000, guid: e2714cb57d3c4c0d856d1c0e51116f32, type: 2}
-  noiseMap: {fileID: 0}
-  generateNoiseIfMissing: 1
-  generatedNoiseResolution: 256
-  generatedNoiseScale: 5
-  generatedNoiseSeed: 1337
-  areaSize: 80
-  heightAboveGround: 3
-  cameraForwardOffset: 8
-  followCamera: 1
-  fogDensity: 0.42
-  fadeSpeed: 0.35
-  previewInEditMode: 1
-  editModePreviewDensity: 0.28
+  - {fileID: 900100002}
