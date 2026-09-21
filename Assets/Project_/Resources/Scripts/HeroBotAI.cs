@@ -32,9 +32,13 @@ public class HeroBotAI : MonoBehaviour
     public float searchRadius = 24f;
     [Range(0f, 0.8f)] public float armor = 0.05f;
 
-    [Header("Survivor AI")]
-    public float xpPickupSearchRadius = 14f;
-    public float basePickupRadius = 1.2f;
+    [Header("Survivor Auto Pickup")]
+    [Tooltip("EXP trong bán kính này được tự động nhặt khi Hero đi ngang qua. Hero không đổi đường để chạy tới EXP.")]
+    [Min(0.1f)] public float basePickupRadius = 1.8f;
+    [Tooltip("Khoảng thời gian giữa các lần kiểm tra EXP trong vùng nhặt.")]
+    [Range(0.02f, 0.5f)] public float xpPickupCheckInterval = 0.08f;
+
+    [Header("Death")]
     public float corpseHoldTime = 2.5f;
     public float shrinkDuration = 1.25f;
 
@@ -46,12 +50,13 @@ public class HeroBotAI : MonoBehaviour
     public float ExperienceToNext => 10f + (Level - 1) * 8f;
 
     private readonly int[] upgradeStacks = new int[12];
+    private readonly List<ExperienceOrb> xpCollectBuffer = new(16);
     private MonsterAI targetMonster;
-    private ExperienceOrb targetXP;
     private Animator anim;
     private NavMeshAgent agent;
     private Rigidbody rb;
     private float attackTimer;
+    private float xpPickupTimer;
     private bool beingKnocked;
     private int attackCounter;
 
@@ -80,32 +85,19 @@ public class HeroBotAI : MonoBehaviour
     void Update()
     {
         if (!IsAlive || beingKnocked) return;
+
         attackTimer -= Time.deltaTime;
+        xpPickupTimer -= Time.deltaTime;
+
+        if (xpPickupTimer <= 0f)
+        {
+            xpPickupTimer = Mathf.Max(0.02f, xpPickupCheckInterval);
+            CollectExperienceInPickupRadius();
+        }
 
         if (!TryPlaceOnNavMesh()) return;
 
         targetMonster = PickBestMonsterTarget();
-        float nearestThreat = targetMonster != null ? FlatDistance(transform.position, targetMonster.transform.position) : float.MaxValue;
-
-        if (nearestThreat > 5f)
-        {
-            targetXP = PickBestXP();
-            if (targetXP != null)
-            {
-                float pickupRadius = basePickupRadius * (1f + 0.2f * upgradeStacks[(int)HeroUpgradeType.PickupRange]);
-                float dist = FlatDistance(transform.position, targetXP.transform.position);
-                if (dist <= pickupRadius)
-                {
-                    targetXP.Collect(this);
-                    targetXP = null;
-                }
-                else
-                {
-                    MoveTo(targetXP.transform.position);
-                    return;
-                }
-            }
-        }
 
         if (targetMonster != null && targetMonster.IsAlive)
         {
@@ -187,19 +179,36 @@ public class HeroBotAI : MonoBehaviour
         return best;
     }
 
-    private ExperienceOrb PickBestXP()
+    private void CollectExperienceInPickupRadius()
     {
-        ExperienceOrb best = null;
-        float bestScore = 0f;
+        float pickupRadius =
+            basePickupRadius *
+            (1f + 0.2f * upgradeStacks[(int)HeroUpgradeType.PickupRange]);
+
+        float pickupRadiusSqr = pickupRadius * pickupRadius;
+        xpCollectBuffer.Clear();
+
         foreach (ExperienceOrb orb in ExperienceOrb.Active)
         {
-            if (orb == null) continue;
-            float distance = FlatDistance(transform.position, orb.transform.position);
-            if (distance > xpPickupSearchRadius) continue;
-            float score = orb.value / (1f + distance * 0.45f);
-            if (score > bestScore) { bestScore = score; best = orb; }
+            if (orb == null || orb.IsCollected)
+                continue;
+
+            Vector3 delta = orb.transform.position - transform.position;
+            delta.y = 0f;
+
+            if (delta.sqrMagnitude <= pickupRadiusSqr)
+                xpCollectBuffer.Add(orb);
         }
-        return best;
+
+        for (int i = 0; i < xpCollectBuffer.Count; i++)
+        {
+            ExperienceOrb orb = xpCollectBuffer[i];
+
+            if (orb != null)
+                orb.Collect(this);
+        }
+
+        xpCollectBuffer.Clear();
     }
 
     private void AttackTarget()

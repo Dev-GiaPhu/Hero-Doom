@@ -1096,14 +1096,23 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: 61f449152539fcb4f9d774508e5eef94, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: 
+  m_Name:
+  m_EditorClassIdentifier:
   resolution: 256
-  scale: 10
-  cloudDarkness: 1
-  cookieSize: {x: 50, y: 50}
-  scrollSpeedX: 0.05
-  scrollSpeedY: 0.02
+  cloudSize: 2.8
+  cloudDensity: 0.48
+  cloudDarkness: 0.58
+  edgeSoftness: 0.11
+  edgeDetailScale: 5.5
+  edgeDetailStrength: 0.24
+  microDetailScale: 11
+  microDetailStrength: 0.07
+  morphSpeed: 0.025
+  morphStrength: 0.42
+  textureUpdateInterval: 0.35
+  cookieSize: {x: 120, y: 120}
+  scrollSpeedX: 0.015
+  scrollSpeedY: 0.007
 --- !u!114 &410087045
 MonoBehaviour:
   m_ObjectHideFlags: 0
