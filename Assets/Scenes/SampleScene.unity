@@ -452,7 +452,6 @@ GameObject:
   - component: {fileID: 330585545}
   - component: {fileID: 330585544}
   - component: {fileID: 330585547}
-  - component: {fileID: 330585548}
   - component: {fileID: 330585549}
   m_Layer: 0
   m_Name: Main Camera
@@ -579,38 +578,6 @@ MonoBehaviour:
     m_MipBias: 0
     m_VarianceClampScale: 0.9
     m_ContrastAdaptiveSharpening: 0
---- !u!114 &330585548
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 330585543}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 72ece51f2901e7445ab60da3685d6b5f, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: 
-  ShowDebugText: 0
-  ShowCameraFrustum: 1
-  IgnoreTimeScale: 0
-  WorldUpOverride: {fileID: 0}
-  ChannelMask: -1
-  UpdateMethod: 2
-  BlendUpdateMethod: 1
-  LensModeOverride:
-    Enabled: 0
-    DefaultMode: 2
-  DefaultBlend:
-    Style: 1
-    Time: 2
-    CustomCurve:
-      serializedVersion: 2
-      m_Curve: []
-      m_PreInfinity: 2
-      m_PostInfinity: 2
-      m_RotationOrder: 4
-  CustomBlends: {fileID: 0}
 --- !u!114 &330585549
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -621,8 +588,8 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: 44ac76232a35443bb34b7ceec4bcba4f, type: 3}
-  m_Name:
-  m_EditorClassIdentifier:
+  m_Name: 
+  m_EditorClassIdentifier: 
   moveSpeed: 12
   sprintMultiplier: 2
   smoothTime: 0.16
@@ -895,6 +862,11 @@ MonoBehaviour:
   riverFrequency: 0.08
   secondaryAmplitude: 2
   secondaryFrequency: 0.035
+  waterSegmentHalfLengthChunks: 7
+  waterCrossingCount: 2
+  crossingHalfWidthChunks: 0
+  shoreNavPadding: 0.7
+  safeSpawnWaterClearance: 1.5
 --- !u!4 &403880880
 Transform:
   m_ObjectHideFlags: 0
@@ -1114,30 +1086,6 @@ MonoBehaviour:
     m_PreInfinity: 2
     m_PostInfinity: 2
     m_RotationOrder: 4
---- !u!114 &410087045
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 410087039}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 6c2f28f53cf64efb95d13c4210fbc4b7, type: 3}
-  m_Name:
-  m_EditorClassIdentifier:
-  startWeather: 0
-  minWeatherDuration: 45
-  maxWeatherDuration: 90
-  transitionDuration: 4
-  avoidImmediateRepeat: 1
-  sunnyWeight: 1
-  rainWeight: 1
-  fogWeight: 1
-  cloudShadows: {fileID: 410087044}
-  sunnyCloudDarkness: 0.08
-  rainCloudDarkness: 0.48
-  fogCloudDarkness: 0.22
 --- !u!114 &410087044
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -1153,8 +1101,39 @@ MonoBehaviour:
   resolution: 256
   scale: 10
   cloudDarkness: 1
+  cookieSize: {x: 50, y: 50}
   scrollSpeedX: 0.05
   scrollSpeedY: 0.02
+--- !u!114 &410087045
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 410087039}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 6c2f28f53cf64efb95d13c4210fbc4b7, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  startWeather: 0
+  minWeatherDuration: 45
+  maxWeatherDuration: 90
+  transitionDuration: 4
+  avoidImmediateRepeat: 1
+  sunnyWeight: 1
+  rainWeight: 1
+  fogWeight: 1
+  cloudShadows: {fileID: 410087044}
+  sunnyCloudCoverage: 0.08
+  rainCloudCoverage: 0.48
+  fogCloudCoverage: 0.22
+  sunnyLightMultiplier: 1
+  rainLightMultiplier: 0.52
+  fogLightMultiplier: 0.72
+  sunnyAmbientMultiplier: 1
+  rainAmbientMultiplier: 0.62
+  fogAmbientMultiplier: 0.78
 --- !u!1 &444106173
 GameObject:
   m_ObjectHideFlags: 0
@@ -1596,7 +1575,7 @@ MonoBehaviour:
   m_OnCullStateChanged:
     m_PersistentCalls:
       m_Calls: []
-  m_Sprite: {fileID: -2037249011, guid: c173592673edd0b40a2a732360051046, type: 3}
+  m_Sprite: {fileID: -1781390094, guid: c173592673edd0b40a2a732360051046, type: 3}
   m_Type: 0
   m_PreserveAspect: 0
   m_FillCenter: 1
@@ -1716,7 +1695,7 @@ MonoBehaviour:
   m_OnCullStateChanged:
     m_PersistentCalls:
       m_Calls: []
-  m_Sprite: {fileID: -2037249011, guid: c173592673edd0b40a2a732360051046, type: 3}
+  m_Sprite: {fileID: 1930990730, guid: c173592673edd0b40a2a732360051046, type: 3}
   m_Type: 0
   m_PreserveAspect: 0
   m_FillCenter: 1
@@ -2418,101 +2397,6 @@ CanvasRenderer:
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 1100291258}
   m_CullTransparentMesh: 1
---- !u!1 &1184331526
-GameObject:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  serializedVersion: 6
-  m_Component:
-  - component: {fileID: 1184331529}
-  - component: {fileID: 1184331528}
-  - component: {fileID: 1184331527}
-  m_Layer: 0
-  m_Name: CinemachineCamera
-  m_TagString: Untagged
-  m_Icon: {fileID: 0}
-  m_NavMeshLayer: 0
-  m_StaticEditorFlags: 0
-  m_IsActive: 1
---- !u!114 &1184331527
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 1184331526}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: b617507da6d07e749b7efdb34e1173e1, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: 
-  TrackerSettings:
-    BindingMode: 4
-    PositionDamping: {x: 1, y: 1, z: 1}
-    AngularDampingMode: 0
-    RotationDamping: {x: 1, y: 1, z: 1}
-    QuaternionDamping: 1
-  FollowOffset: {x: 0, y: 17, z: -8}
---- !u!114 &1184331528
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 1184331526}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: f9dfa5b682dcd46bda6128250e975f58, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: 
-  Priority:
-    Enabled: 0
-    m_Value: 0
-  OutputChannel: 1
-  StandbyUpdate: 2
-  m_StreamingVersion: 20241001
-  m_LegacyPriority: 0
-  Target:
-    TrackingTarget: {fileID: 0}
-    LookAtTarget: {fileID: 0}
-    CustomLookAtTarget: 0
-  Lens:
-    FieldOfView: 60
-    OrthographicSize: 5
-    NearClipPlane: 0.3
-    FarClipPlane: 1000
-    Dutch: 0
-    ModeOverride: 0
-    PhysicalProperties:
-      GateFit: 2
-      SensorSize: {x: 21.946, y: 16.002}
-      LensShift: {x: 0, y: 0}
-      FocusDistance: 10
-      Iso: 200
-      ShutterSpeed: 0.005
-      Aperture: 16
-      BladeCount: 5
-      Curvature: {x: 2, y: 11}
-      BarrelClipping: 0.25
-      Anamorphism: 0
-  BlendHint: 0
---- !u!4 &1184331529
-Transform:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 1184331526}
-  serializedVersion: 2
-  m_LocalRotation: {x: 0.5, y: 0, z: 0, w: 0.8660254}
-  m_LocalPosition: {x: 0, y: 17, z: -8}
-  m_LocalScale: {x: 1, y: 1, z: 1}
-  m_ConstrainProportionsScale: 0
-  m_Children: []
-  m_Father: {fileID: 0}
-  m_LocalEulerAnglesHint: {x: 60, y: 0, z: 0}
 --- !u!1 &1216932917
 GameObject:
   m_ObjectHideFlags: 0
@@ -2880,8 +2764,8 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: 3c6903315431149d4b4ab3030ffbced9, type: 3}
-  m_Name:
-  m_EditorClassIdentifier:
+  m_Name: 
+  m_EditorClassIdentifier: 
   monsterPrefabs:
   - {fileID: 4273521104092458544, guid: 18492b6b0c0bd2b419842985b06ab80c, type: 3}
   - {fileID: 7849558439264195013, guid: 84466f446e74fc1448f85f2f4137a3f0, type: 3}
@@ -2897,6 +2781,22 @@ MonoBehaviour:
     m_Bits: 8
   crosshairIndicator: {fileID: 1924565668}
   navMeshSampleRadius: 1.5
+  spawnWaterClearance: 1.25
+--- !u!4 &1350396453
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1350396451}
+  serializedVersion: 2
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: 0.059282936, y: 0.036757406, z: -0.029184356}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 0}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!114 &1350396454
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -2907,8 +2807,8 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: a1714cb57d3c4c0d856d1c0e51116f01, type: 3}
-  m_Name:
-  m_EditorClassIdentifier:
+  m_Name: 
+  m_EditorClassIdentifier: 
   heroPrefab: {fileID: 7592019447709997584, guid: beda0f40c91354517862218b802ce9c4, type: 3}
   baseHeroHP: 500
   heroHPPerDeath: 75
@@ -2930,8 +2830,8 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: b1714cb57d3c4c0d856d1c0e51116f11, type: 3}
-  m_Name:
-  m_EditorClassIdentifier:
+  m_Name: 
+  m_EditorClassIdentifier: 
   map: {fileID: 403880879}
   rebuildDelay: 0.35
   verticalSize: 30
@@ -2945,8 +2845,8 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: a4714cb57d3c4c0d856d1c0e51116f04, type: 3}
-  m_Name:
-  m_EditorClassIdentifier:
+  m_Name: 
+  m_EditorClassIdentifier: 
   pillarCount: 3
   captureRadius: 4
   goldBonusPerCapturedPillar: 0.25
@@ -2963,8 +2863,8 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: b2714cb57d3c4c0d856d1c0e51116f12, type: 3}
-  m_Name:
-  m_EditorClassIdentifier:
+  m_Name: 
+  m_EditorClassIdentifier: 
   weather: {fileID: 410087045}
   targetCamera: {fileID: 330585545}
   weatherFadeSpeed: 0.65
@@ -2973,21 +2873,6 @@ MonoBehaviour:
   groundMask:
     serializedVersion: 2
     m_Bits: 8
---- !u!4 &1350396453
-Transform:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 1350396451}
-  serializedVersion: 2
-  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
-  m_LocalPosition: {x: 0.059282936, y: 0.036757406, z: -0.029184356}
-  m_LocalScale: {x: 1, y: 1, z: 1}
-  m_ConstrainProportionsScale: 0
-  m_Children: []
-  m_Father: {fileID: 0}
-  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!1 &1529027651
 GameObject:
   m_ObjectHideFlags: 0
@@ -3621,7 +3506,7 @@ MonoBehaviour:
   m_OnCullStateChanged:
     m_PersistentCalls:
       m_Calls: []
-  m_Sprite: {fileID: -1781390094, guid: c173592673edd0b40a2a732360051046, type: 3}
+  m_Sprite: {fileID: -2037249011, guid: c173592673edd0b40a2a732360051046, type: 3}
   m_Type: 0
   m_PreserveAspect: 0
   m_FillCenter: 1
@@ -3942,7 +3827,6 @@ SceneRoots:
   m_ObjectHideFlags: 0
   m_Roots:
   - {fileID: 330585546}
-  - {fileID: 1184331529}
   - {fileID: 1350396453}
   - {fileID: 410087041}
   - {fileID: 2026383828}
