@@ -29,6 +29,8 @@ public class MonsterAI : MonoBehaviour
     [Range(0f, 0.8f)] public float armor = 0f;
 
     [Header("Mage")]
+    [Tooltip("Prefab used for normal magic attacks. Leave empty to use the default sphere.")]
+    public GameObject mageProjectilePrefab;
     public float preferredRange = 6f;
     public float retreatRange = 3.5f;
     public float specialCooldown = 7f;
@@ -243,7 +245,7 @@ public class MonsterAI : MonoBehaviour
 
         Vector3 push = (heroTarget.transform.position - transform.position).normalized;
         if (role == MonsterRole.Mage)
-            MagicProjectile.Spawn(transform.position + Vector3.up * 1.25f, heroTarget, this, damage, knockbackForce);
+            MagicProjectile.Spawn(transform.position + Vector3.up * 1.25f, heroTarget, this, damage, knockbackForce, mageProjectilePrefab);
         else
             heroTarget.TakeDamage(damage, this, push * knockbackForce, heavy);
     }

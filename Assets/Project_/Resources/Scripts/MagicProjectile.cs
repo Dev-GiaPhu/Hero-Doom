@@ -9,32 +9,52 @@ public class MagicProjectile : MonoBehaviour
     private float speed = 12f;
     private float life = 4f;
 
-    public static void Spawn(Vector3 origin, HeroBotAI target, MonsterAI source, float damage, float knockback)
+    public static void Spawn(Vector3 origin, HeroBotAI target, MonsterAI source, float damage, float knockback, GameObject prefab = null)
     {
         if (target == null || !target.IsAlive) return;
 
-        GameObject go = GameObject.CreatePrimitive(PrimitiveType.Sphere);
-        go.name = "MageProjectile";
-        go.transform.position = origin;
-        go.transform.localScale = Vector3.one * 0.22f;
-
-        Collider col = go.GetComponent<Collider>();
-        if (col != null) col.enabled = false;
-
-        Renderer renderer = go.GetComponent<Renderer>();
-        Shader shader = Shader.Find("Universal Render Pipeline/Unlit");
-        if (renderer != null && shader != null)
+        GameObject go;
+        if (prefab != null)
         {
-            Material mat = new Material(shader);
-            mat.color = new Color(0.35f, 0.65f, 1f, 1f);
-            renderer.material = mat;
+            Vector3 direction = target.transform.position + Vector3.up - origin;
+            Quaternion rotation = direction.sqrMagnitude > 0.001f ? Quaternion.LookRotation(direction) : Quaternion.identity;
+            go = Object.Instantiate(prefab, origin, rotation);
+        }
+        else
+        {
+            go = GameObject.CreatePrimitive(PrimitiveType.Sphere);
+            go.name = "MageProjectile";
+            go.transform.position = origin;
+            go.transform.localScale = Vector3.one * 0.22f;
+
+            Renderer renderer = go.GetComponent<Renderer>();
+            Shader shader = Shader.Find("Universal Render Pipeline/Unlit");
+            if (renderer != null && shader != null)
+            {
+                Material mat = new Material(shader);
+                mat.color = new Color(0.35f, 0.65f, 1f, 1f);
+                renderer.material = mat;
+            }
         }
 
-        MagicProjectile projectile = go.AddComponent<MagicProjectile>();
+        // Movement and hits are handled here, independently of prefab physics.
+        foreach (Collider col in go.GetComponentsInChildren<Collider>(true))
+            col.enabled = false;
+        foreach (Rigidbody body in go.GetComponentsInChildren<Rigidbody>(true))
+        {
+            body.useGravity = false;
+            body.isKinematic = true;
+        }
+
+        MagicProjectile projectile = go.GetComponent<MagicProjectile>();
+        if (projectile == null) projectile = go.AddComponent<MagicProjectile>();
         projectile.target = target;
         projectile.source = source;
         projectile.damage = damage;
         projectile.knockback = knockback;
+        projectile.life = 4f;
+        projectile.enabled = true;
+        go.SetActive(true);
     }
 
     public static void SpawnLightning(Vector3 start, Vector3 end)
@@ -87,6 +107,7 @@ public class MagicProjectile : MonoBehaviour
             return;
         }
 
+        transform.rotation = Quaternion.LookRotation(delta);
         transform.position += delta.normalized * step;
     }
 }
