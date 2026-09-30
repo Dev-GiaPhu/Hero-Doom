@@ -28,12 +28,26 @@ public class MagicProjectile : MonoBehaviour
             go.transform.localScale = Vector3.one * 0.22f;
 
             Renderer renderer = go.GetComponent<Renderer>();
-            Shader shader = Shader.Find("Universal Render Pipeline/Unlit");
-            if (renderer != null && shader != null)
+            if (renderer != null)
             {
-                Material mat = new Material(shader);
-                mat.color = new Color(0.35f, 0.65f, 1f, 1f);
-                renderer.material = mat;
+                // Shader Graph assignment: animated Fresnel + Time pulse.
+                // Material is kept in Resources so the runtime-created projectile can use it.
+                Material magePulse = Resources.Load<Material>("Materials/MagePulse");
+                if (magePulse != null)
+                {
+                    renderer.sharedMaterial = magePulse;
+                }
+                else
+                {
+                    // Safe fallback if the Shader Graph/material has not imported yet.
+                    Shader shader = Shader.Find("Universal Render Pipeline/Unlit");
+                    if (shader != null)
+                    {
+                        Material mat = new Material(shader);
+                        mat.color = new Color(0.35f, 0.65f, 1f, 1f);
+                        renderer.material = mat;
+                    }
+                }
             }
         }
 
