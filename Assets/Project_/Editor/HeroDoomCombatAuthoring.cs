@@ -64,7 +64,7 @@ public static class HeroDoomCombatAuthoring
         var hud = Object.FindFirstObjectByType<MonsterHUDController>();
         SummonerUpgrades upgrades = manager.GetComponent<SummonerUpgrades>();
         if (upgrades == null) upgrades = Undo.AddComponent<SummonerUpgrades>(manager.gameObject);
-        upgrades.gameManager = manager; upgrades.spawner = spawner; upgrades.maxAliveMonsters = 60;
+        upgrades.gameManager = manager; upgrades.spawner = spawner; upgrades.maxAliveMonsters = 36;
         for (int i = 0; i < 4; i++)
         {
             Sprite icon = hud != null && hud.slots.Length > i ? hud.slots[i].normalSprite : null;
@@ -254,9 +254,11 @@ public static class HeroDoomCombatAuthoring
         d.role = (MonsterRole)slot; d.displayName = names[slot]; d.icon = icon;
         d.basePowerCost = new[] { 40, 80, 140, 120 }[slot];
         d.baseAutoCost = new[] { 80, 160, 280, 360 }[slot];
+        d.maxAutoLevel = 6;
+        d.previousMonsterAutoLevelRequired = slot == 0 ? 0 : 3;
         d.startingInterval = new[] { 18, 24, 30, 34 }[slot];
         d.minimumInterval = new[] { 4, 6, 8, 10 }[slot];
-        d.maxAlive = new[] { 24, 18, 12, 12 }[slot];
+        d.maxAlive = new[] { 18, 12, 8, 8 }[slot];
         AssetDatabase.CreateAsset(d, path); return d;
     }
 
