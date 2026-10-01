@@ -92,6 +92,19 @@ public class HeroBotAI : MonoBehaviour
     public int Level { get; private set; } = 1;
     public float Experience { get; private set; }
     public float ExperienceToNext => 10f + (Level - 1) * 8f;
+    public int UpgradeCount => upgradeStacks.Length;
+
+    public int GetUpgradeStack(HeroUpgradeType type)
+    {
+        int index = (int)type;
+        return index >= 0 && index < upgradeStacks.Length ? upgradeStacks[index] : 0;
+    }
+
+    public HeroUpgradeDefinition GetUpgradeDefinition(HeroUpgradeType type)
+    {
+        if (upgradeDefinitions == null) return null;
+        return System.Array.Find(upgradeDefinitions, d => d != null && d.type == type);
+    }
 
     private readonly int[] upgradeStacks = new int[12];
     private readonly List<ExperienceOrb> xpCollectBuffer = new(16);
