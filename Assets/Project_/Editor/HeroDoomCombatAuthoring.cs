@@ -202,9 +202,9 @@ public static class HeroDoomCombatAuthoring
 
         RectTransform canvasRect = canvasGo.GetComponent<RectTransform>();
         canvasRect.SetParent(root.transform, false);
-        canvasRect.sizeDelta = new Vector2(2.8f, 0.34f);
+        canvasRect.sizeDelta = new Vector2(220f, 22f);
         canvasRect.localPosition = new Vector3(0f, 2.25f, 0f);
-        canvasRect.localScale = Vector3.one * 0.0125f;
+        canvasRect.localScale = Vector3.one * 0.01f;
 
         Canvas canvas = canvasGo.GetComponent<Canvas>();
         canvas.renderMode = RenderMode.WorldSpace;
@@ -234,7 +234,7 @@ public static class HeroDoomCombatAuthoring
         fillRect.offsetMin = Vector2.zero;
         fillRect.offsetMax = Vector2.zero;
         Image fill = fillGo.GetComponent<Image>();
-        fill.color = new Color(0.35f, 0.9f, 0.45f, 1f);
+        fill.color = new Color(0.25f, 0.9f, 0.35f, 1f);
         fill.type = Image.Type.Filled;
         fill.fillMethod = Image.FillMethod.Horizontal;
         fill.fillOrigin = 0;
