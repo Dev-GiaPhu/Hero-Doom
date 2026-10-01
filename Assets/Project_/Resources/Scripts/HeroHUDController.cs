@@ -12,9 +12,9 @@ public class HeroHUDController : MonoBehaviour
     public RectTransform progressionRoot;
     public Image experienceFill;
     public TMP_Text experienceText;
-    public GameObject[] upgradeSlots = new GameObject[12];
-    public Image[] upgradeIcons = new Image[12];
-    public TMP_Text[] upgradeCounts = new TMP_Text[12];
+    public GameObject[] upgradeSlots;
+    public Image[] upgradeIcons;
+    public TMP_Text[] upgradeCounts;
 
     [Header("Data Source")]
     public HeroDoomGameManager gameManager;
