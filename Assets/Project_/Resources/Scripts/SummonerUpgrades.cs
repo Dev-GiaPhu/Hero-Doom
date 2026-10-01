@@ -19,7 +19,19 @@ public class SummonerUpgrades : MonoBehaviour
     public event Action Changed;
     public int PowerLevel(int slot) => powerLevels[slot];
     public int AutoLevel(int slot) => autoLevels[slot];
-    public float Remaining(int slot) => Mathf.Max(0, remaining[slot]);
+    public float Remaining(int slot) => slot >= 0 && slot < remaining.Length ? Mathf.Max(0, remaining[slot]) : 0f;
+
+    public int AliveCount(int slot)
+    {
+        if (slot < 0 || slot >= definitions.Length || definitions[slot] == null) return 0;
+        int count = 0;
+        MonsterRole role = definitions[slot].role;
+        foreach (MonsterAI monster in MonsterAI.ActiveMonsters)
+            if (monster != null && monster.IsAlive && monster.role == role) count++;
+        return count;
+    }
+
+    public bool IsGlobalArmyFull => MonsterAI.ActiveMonsters.Count >= maxAliveMonsters;
 
     void Update()
     {
@@ -74,12 +86,10 @@ public class SummonerUpgrades : MonoBehaviour
 
     public bool CanSpawn(int slot)
     {
-        if (MonsterAI.ActiveMonsters.Count >= maxAliveMonsters) return false;
+        if (slot < 0 || slot >= definitions.Length) return false;
+        if (IsGlobalArmyFull) return false;
         if (definitions[slot] == null) return true;
-        int count = 0;
-        foreach (MonsterAI monster in MonsterAI.ActiveMonsters)
-            if (monster != null && monster.IsAlive && monster.role == definitions[slot].role) count++;
-        return count < definitions[slot].maxAlive;
+        return AliveCount(slot) < definitions[slot].maxAlive;
     }
 
     public void Apply(MonsterAI monster, int slot)
