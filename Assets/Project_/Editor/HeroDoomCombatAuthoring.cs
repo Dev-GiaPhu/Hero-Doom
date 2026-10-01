@@ -31,7 +31,7 @@ public static class HeroDoomCombatAuthoring
         {
             if (action == "build") Build();
             else if (action == "validate") Validate();
-            else if (action == "test") HeroDoomCombatChecks.Run();
+            else if (action == "test") RunChecks();
             else throw new Exception("Unknown authoring request: " + action);
         }
         catch (Exception e) { File.WriteAllText(Work + "/result.txt", e.ToString()); Debug.LogException(e); }
@@ -400,6 +400,45 @@ public static class HeroDoomCombatAuthoring
         Text("Automation Help", root.transform, "AUTO unlock chain: previous monster AUTO Lv.3.\nAUTO caps at Lv.6. Global army cap: 36. Timed summons cost no extra gold.", 28, 990, 20, 64, 16, Mint).textWrappingMode = TextWrappingModes.Normal;
         // Save the exact layout as a reusable prefab; scene bindings remain on the actual scene objects.
         PrefabUtility.SaveAsPrefabAsset(root, Root + "/Prefabs/Combat/Summoner Upgrade Panel.prefab");
+    }
+
+    [MenuItem("Hero Doom/Run Combat Checks")]
+    public static void RunChecks()
+    {
+        Validate();
+
+        PlayerSpawner spawner = Object.FindFirstObjectByType<PlayerSpawner>();
+        SummonerUpgrades upgrades = spawner != null ? spawner.upgrades : null;
+        if (upgrades == null) throw new Exception("Upgrade system is not wired.");
+
+        for (int i = 0; i < upgrades.definitions.Length; i++)
+        {
+            MonsterUpgradeDefinition d = upgrades.definitions[i];
+            if (d == null) throw new Exception("Missing monster definition: " + i);
+
+            double previousPowerCost = 0d;
+            for (int level = 0; level < d.maxPowerLevel; level++)
+            {
+                double cost = d.PowerCost(level);
+                if (cost <= previousPowerCost) throw new Exception("Power costs must increase: " + d.displayName);
+                previousPowerCost = cost;
+            }
+
+            double previousAutoCost = 0d;
+            float previousInterval = float.MaxValue;
+            for (int level = 1; level <= d.maxAutoLevel; level++)
+            {
+                double cost = d.AutoCost(level - 1);
+                float interval = d.Interval(level);
+                if (cost <= previousAutoCost) throw new Exception("AUTO costs must increase: " + d.displayName);
+                if (interval > previousInterval + 0.001f) throw new Exception("AUTO interval must not get slower: " + d.displayName);
+                if (interval < d.minimumInterval - 0.001f) throw new Exception("AUTO interval below minimum: " + d.displayName);
+                previousAutoCost = cost;
+                previousInterval = interval;
+            }
+        }
+
+        File.AppendAllText(Work + "/result.txt", "Progression cost/interval checks OK\n");
     }
 
     [MenuItem("Hero Doom/Validate Combat Setup")]
