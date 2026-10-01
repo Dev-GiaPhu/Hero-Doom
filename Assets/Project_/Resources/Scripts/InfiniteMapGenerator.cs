@@ -140,6 +140,7 @@ public class InfiniteMapGenerator : MonoBehaviour
 
             water.name = $"Water_{coord.x}_{coord.y}";
             SetLayerRecursively(water, LayerMask.NameToLayer("Water"));
+            CreateWaterKillTrigger(parent.transform, center);
         }
         else
         {
@@ -153,6 +154,23 @@ public class InfiniteMapGenerator : MonoBehaviour
         }
 
         activeChunks.Add(coord, parent);
+    }
+
+    private void CreateWaterKillTrigger(Transform parent, Vector3 center)
+    {
+        GameObject trigger = new GameObject("Water Kill Trigger");
+        trigger.transform.SetParent(parent, true);
+        trigger.transform.position = new Vector3(center.x, waterLevel + 0.45f, center.z);
+
+        int waterLayer = LayerMask.NameToLayer("Water");
+        if (waterLayer >= 0) trigger.layer = waterLayer;
+
+        BoxCollider box = trigger.AddComponent<BoxCollider>();
+        box.isTrigger = true;
+        box.center = Vector3.zero;
+        box.size = new Vector3(maxChunkSize * 0.96f, 2.5f, maxChunkSize * 0.96f);
+
+        trigger.AddComponent<WaterHazard>();
     }
 
     private void CreateWalkableCollider(GameObject parent, Vector2Int coord)
