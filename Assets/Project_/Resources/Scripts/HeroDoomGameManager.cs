@@ -29,6 +29,10 @@ public class HeroDoomGameManager : MonoBehaviour
     public bool IsRespawning => respawnTimer > 0f;
     public float RespawnRemaining => Mathf.Max(0f, respawnTimer);
 
+    private readonly int[] persistentHeroUpgradeStacks = new int[12];
+    private int persistentHeroLevel = 1;
+    private float persistentHeroExperience;
+
     private float respawnTimer;
     private Vector3 lastHeroDeathPosition;
 
@@ -77,6 +81,18 @@ public class HeroDoomGameManager : MonoBehaviour
             baseHeroHP + heroHPPerDeath * HeroDeaths;
 
         hero.SetPermanentDifficulty(permanentMaxHP);
+        hero.RestoreProgression(persistentHeroLevel, persistentHeroExperience, persistentHeroUpgradeStacks);
+    }
+
+    public void SaveHeroProgression(HeroBotAI hero)
+    {
+        if (hero == null) return;
+
+        persistentHeroLevel = Mathf.Max(1, hero.Level);
+        persistentHeroExperience = Mathf.Max(0f, hero.Experience);
+
+        for (int i = 0; i < persistentHeroUpgradeStacks.Length; i++)
+            persistentHeroUpgradeStacks[i] = hero.GetUpgradeStack((HeroUpgradeType)i);
     }
 
     public void NotifyHeroDied(HeroBotAI hero)
@@ -86,6 +102,7 @@ public class HeroDoomGameManager : MonoBehaviour
             respawnTimer > 0f)
             return;
 
+        SaveHeroProgression(hero);
         lastHeroDeathPosition = hero.transform.position;
         CurrentHero = null;
         HeroDeaths++;
