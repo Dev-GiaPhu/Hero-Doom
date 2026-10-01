@@ -132,11 +132,16 @@ public static class HeroDoomCombatAuthoring
         { var capsule = go.AddComponent<CapsuleCollider>(); capsule.center = Vector3.up; capsule.height = 2; capsule.radius = 0.45f; }
         Rigidbody body = go.GetComponent<Rigidbody>() ?? go.AddComponent<Rigidbody>();
         body.isKinematic = true; body.useGravity = false;
-        NavMeshAgent agent = go.GetComponent<NavMeshAgent>() ?? go.AddComponent<NavMeshAgent>();
+        NavMeshAgent agent = go.GetComponent<NavMeshAgent>();
+        if (agent == null)
+            agent = Undo.AddComponent<NavMeshAgent>(go);
+        if (agent == null)
+            throw new Exception("Could not add NavMeshAgent to " + go.name);
+
         agent.radius = hero ? 0.48f : 0.42f; agent.height = 2; agent.angularSpeed = 720;
         agent.acceleration = 24; agent.obstacleAvoidanceType = ObstacleAvoidanceType.HighQualityObstacleAvoidance;
         agent.avoidancePriority = hero ? 30 : 50;
-        if (go.GetComponent<CombatKnockback>() == null) go.AddComponent<CombatKnockback>();
+        if (go.GetComponent<CombatKnockback>() == null) Undo.AddComponent<CombatKnockback>(go);
     }
 
     private static void AuthorHero(GameObject root, DamagePopup damage, HeroUpgradeThought thought, HeroUpgradeDefinition[] defs, GameObject ring)
