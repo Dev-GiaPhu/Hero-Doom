@@ -252,6 +252,30 @@ public static class HeroDoomCombatAuthoring
         bar.hiddenScale = 0.78f;
     }
 
+    private static Material CreateDamageTextMaterial(TMP_FontAsset font)
+    {
+        if (font == null || font.material == null) return null;
+
+        string path = Root + "/Materials/Combat/Damage Text.mat";
+        Material mat = AssetDatabase.LoadAssetAtPath<Material>(path);
+
+        if (mat == null)
+        {
+            mat = new Material(font.material);
+            mat.name = "Damage Text";
+            AssetDatabase.CreateAsset(mat, path);
+        }
+
+        if (mat.HasProperty(ShaderUtilities.ID_OutlineWidth))
+            mat.SetFloat(ShaderUtilities.ID_OutlineWidth, 0.18f);
+
+        if (mat.HasProperty(ShaderUtilities.ID_OutlineColor))
+            mat.SetColor(ShaderUtilities.ID_OutlineColor, new Color(0.05f, 0.03f, 0.02f, 0.9f));
+
+        EditorUtility.SetDirty(mat);
+        return mat;
+    }
+
     private static DamagePopup CreateDamage()
     {
         GameObject go = new GameObject("Damage Number", typeof(RectTransform), typeof(TextMeshPro), typeof(DamagePopup));
@@ -259,7 +283,7 @@ public static class HeroDoomCombatAuthoring
         text.font = TMP_Settings.defaultFontAsset; text.text = "128"; text.fontSize = 9f;
         text.fontStyle = FontStyles.Bold; text.alignment = TextAlignmentOptions.Center;
         text.textWrappingMode = TextWrappingModes.NoWrap; text.color = Gold;
-        text.outlineWidth = 0.18f; text.outlineColor = new Color(0.05f, 0.03f, 0.02f, 0.9f);
+        text.fontSharedMaterial = CreateDamageTextMaterial(text.font);
         text.rectTransform.sizeDelta = new Vector2(7.5f, 3f); text.renderer.sortingOrder = 120;
         go.transform.localScale = Vector3.one * 0.38f;
         go.GetComponent<DamagePopup>().label = text;
