@@ -26,6 +26,11 @@ public class PlayerSpawner : MonoBehaviour
     public GameObject monster4Prefab;
     public double monster4Cost = 35d;
 
+    [Header("Upgrades and automatic summoning")]
+    public SummonerUpgrades upgrades;
+    public Vector2 autoSpawnDistance = new Vector2(7f, 11f);
+    [Range(1, 20)] public int autoSpawnAttempts = 8;
+
     [Header("Selection")]
     [SerializeField, Range(0, 3)]
     private int currentMonsterIndex = 0;
@@ -87,9 +92,9 @@ public class PlayerSpawner : MonoBehaviour
         SelectedMonsterChanged?.Invoke(currentMonsterIndex);
     }
 
-    private GameObject GetSelectedPrefab()
+    public GameObject GetPrefab(int slot)
     {
-        return currentMonsterIndex switch
+        return slot switch
         {
             0 => monster1Prefab,
             1 => monster2Prefab,
@@ -99,9 +104,9 @@ public class PlayerSpawner : MonoBehaviour
         };
     }
 
-    private double GetSelectedCost()
+    public double GetCost(int slot)
     {
-        return currentMonsterIndex switch
+        return slot switch
         {
             0 => monster1Cost,
             1 => monster2Cost,
@@ -136,63 +141,44 @@ public class PlayerSpawner : MonoBehaviour
     private void SpawnMonster()
     {
         if (mainCam == null || Mouse.current == null) return;
-
-        GameObject prefab = GetSelectedPrefab();
-
-        if (prefab == null)
-        {
-            Debug.LogWarning(
-                $"[HeroDoom] Monster slot {currentMonsterIndex + 1} chưa được gán prefab trong PlayerSpawner Inspector.");
-            return;
-        }
-
-        MonsterAI prefabAI = prefab.GetComponent<MonsterAI>();
-
-        if (prefabAI == null)
-        {
-            Debug.LogError(
-                $"[HeroDoom] Prefab {prefab.name} chưa có MonsterAI. Gắn MonsterAI trực tiếp lên prefab để role/stats hiện trong Inspector.");
-            return;
-        }
-
         Ray ray = mainCam.ScreenPointToRay(Mouse.current.position.ReadValue());
+        if (Physics.Raycast(ray, out RaycastHit hit, 500f, groundLayer))
+            TrySpawn(currentMonsterIndex, hit.point, true);
+    }
 
-        if (!Physics.Raycast(ray, out RaycastHit hit, 500f, groundLayer))
-            return;
-
-        if (!IsValidSpawn(hit.point))
-            return;
-
-        Vector3 spawnPoint = hit.point;
-
-        if (NavMesh.SamplePosition(
-                hit.point,
-                out NavMeshHit navHit,
-                navMeshSampleRadius,
-                NavMesh.AllAreas))
+    public bool TryAutoSpawn(int slot, bool chargeGold)
+    {
+        HeroBotAI hero = HeroDoomGameManager.Instance != null ? HeroDoomGameManager.Instance.CurrentHero : null;
+        if (hero == null || !hero.IsAlive) return false;
+        if (upgrades != null && !upgrades.CanSpawn(slot)) return false;
+        for (int i = 0; i < autoSpawnAttempts; i++)
         {
-            if (map != null &&
-                !map.IsSafeDistanceFromWater(
-                    navHit.position,
-                    spawnWaterClearance))
-                return;
-
-            spawnPoint = navHit.position;
+            float angle = UnityEngine.Random.Range(0f, Mathf.PI * 2);
+            float distance = UnityEngine.Random.Range(autoSpawnDistance.x, Mathf.Max(autoSpawnDistance.x, autoSpawnDistance.y));
+            Vector3 point = hero.transform.position + new Vector3(Mathf.Cos(angle), 0, Mathf.Sin(angle)) * distance;
+            if (TrySpawn(slot, point, chargeGold)) return true;
         }
+        return false;
+    }
 
-        double cost = GetSelectedCost();
-
-        if (HeroDoomGameManager.Instance != null &&
-            !HeroDoomGameManager.Instance.SpendGold(cost))
-            return;
-
-        GameObject go = Instantiate(prefab, spawnPoint, Quaternion.identity);
-        go.name = $"Monster_{currentMonsterIndex + 1}_{prefab.name}";
+    public bool TrySpawn(int slot, Vector3 point, bool chargeGold)
+    {
+        if (slot < 0 || slot > 3 || (upgrades != null && !upgrades.CanSpawn(slot))) return false;
+        GameObject prefab = GetPrefab(slot);
+        if (prefab == null || prefab.GetComponent<MonsterAI>() == null) return false;
+        if (map == null) map = FindFirstObjectByType<InfiniteMapGenerator>();
+        if (!IsValidSpawn(point)) return false;
+        if (!NavMesh.SamplePosition(point, out NavMeshHit navHit, navMeshSampleRadius, NavMesh.AllAreas)) return false;
+        if (!IsValidSpawn(navHit.position)) return false;
+        HeroDoomGameManager manager = HeroDoomGameManager.Instance;
+        if (chargeGold && (manager == null || !manager.SpendGold(GetCost(slot)))) return false;
+        GameObject go = Instantiate(prefab, navHit.position, Quaternion.identity);
+        go.name = $"Monster_{slot + 1}_{prefab.name}";
         go.tag = "Enemy";
-
         MonsterAI ai = go.GetComponent<MonsterAI>();
-
-        CapturePillarManager.Instance?.TryAssignGuard(ai, spawnPoint);
+        upgrades?.Apply(ai, slot);
+        CapturePillarManager.Instance?.TryAssignGuard(ai, navHit.position);
+        return true;
     }
 
     private bool IsValidSpawn(Vector3 point)

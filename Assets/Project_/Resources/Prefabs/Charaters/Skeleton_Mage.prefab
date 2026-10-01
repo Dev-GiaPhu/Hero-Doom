@@ -1508,6 +1508,7 @@ MonoBehaviour:
   attackRange: 1.5
   attackCooldown: 1.2
   armor: 0
+  mageProjectilePrefab: {fileID: 2795126595080099095, guid: ca172d42be00a0f42bd834b8da2e1741, type: 3}
   preferredRange: 6
   retreatRange: 3.5
   specialCooldown: 7

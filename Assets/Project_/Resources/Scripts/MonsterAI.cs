@@ -36,6 +36,20 @@ public class MonsterAI : MonoBehaviour
     public float specialCooldown = 7f;
     public float specialDamage = 28f;
 
+    [Header("Mage Decisions")]
+    [Min(0.1f)] public float retreatDuration = 0.65f;
+    [Min(0.1f)] public float retreatCooldown = 2.5f;
+    [Min(0.1f)] public float retreatDistance = 2.5f;
+    [Min(0.1f)] public float castStandTime = 0.45f;
+    [Min(0.1f)] public float rangeHysteresis = 0.75f;
+    public LineRenderer lightningPrefab;
+
+    [Header("Combat Feedback - authored prefabs")]
+    public DamagePopup damagePopupPrefab;
+    public ExperienceOrb experienceOrbPrefab;
+    public SpawnProtection spawnProtection;
+    public CombatKnockback knockbackMotor;
+
     [Header("Combat Feel")]
     public float rotationSpeed = 12f;
     public float knockbackForce = 0.7f;
@@ -46,13 +60,23 @@ public class MonsterAI : MonoBehaviour
     public float HPPercent => maxHP <= 0f ? 0f : currentHP / maxHP;
     public CapturePillar GuardPillar { get; private set; }
 
+    private float appliedHealthMultiplier = 1;
+    private float appliedDamageMultiplier = 1;
     private HeroBotAI heroTarget;
     private Animator anim;
     private NavMeshAgent agent;
     private Rigidbody rb;
     private float attackTimer;
     private float specialTimer;
-    private bool beingKnocked;
+    private float retreatEndsAt;
+    private float nextRetreatAt;
+    private float castEndsAt;
+    private bool retreating;
+    private bool approaching;
+    private Vector3 retreatDestination;
+    private float nextPathUpdate;
+    private Vector3 lastDestination;
+    private readonly NavMeshPath retreatPath = new NavMeshPath();
 
     void Awake()
     {
@@ -77,6 +101,17 @@ public class MonsterAI : MonoBehaviour
         heroTarget = currentHero;
         TryPlaceOnNavMesh();
         Trigger("SpawnGround");
+    }
+
+    public void ApplySummonerUpgrade(float healthMultiplier, float damageMultiplier)
+    {
+        float hpRatio = currentHP / Mathf.Max(1, maxHP);
+        maxHP = maxHP / appliedHealthMultiplier * healthMultiplier;
+        currentHP = maxHP * hpRatio;
+        attackDamage = attackDamage / appliedDamageMultiplier * damageMultiplier;
+        specialDamage = specialDamage / appliedDamageMultiplier * damageMultiplier;
+        appliedHealthMultiplier = healthMultiplier;
+        appliedDamageMultiplier = damageMultiplier;
     }
 
     public void ConfigureBySlot(int slot)
@@ -110,7 +145,8 @@ public class MonsterAI : MonoBehaviour
 
     void Update()
     {
-        if (!IsAlive || beingKnocked) return;
+        if (!IsAlive) return;
+        if (knockbackMotor != null && knockbackMotor.IsActive) { SetSpeed(0); return; }
 
         attackTimer -= Time.deltaTime;
         specialTimer -= Time.deltaTime;
@@ -141,29 +177,7 @@ public class MonsterAI : MonoBehaviour
 
         if (role == MonsterRole.Mage)
         {
-            if (distance < retreatRange)
-            {
-                Vector3 away = (transform.position - heroTarget.transform.position).normalized;
-                MoveTo(transform.position + away * preferredRange);
-                return;
-            }
-
-            if (distance > preferredRange + 1f)
-            {
-                MoveTo(heroTarget.transform.position);
-                return;
-            }
-
-            StopMoving();
-            Face(heroTarget.transform.position);
-
-            if (specialTimer <= 0f && (HPPercent < 0.55f || distance <= preferredRange))
-            {
-                CastMageSpecial();
-                return;
-            }
-
-            if (attackTimer <= 0f) AttackHero(false);
+            HandleMageBehaviour(distance);
             return;
         }
 
@@ -188,24 +202,7 @@ public class MonsterAI : MonoBehaviour
         if (heroNearZone && heroDistance <= Mathf.Max(attackRange, role == MonsterRole.Mage ? preferredRange + 1f : attackRange + 2f))
         {
             if (role == MonsterRole.Mage)
-            {
-                if (heroDistance < retreatRange)
-                {
-                    Vector3 away = (transform.position - heroTarget.transform.position).normalized;
-                    MoveTo(ClampToGuardZone(transform.position + away * preferredRange));
-                }
-                else if (heroDistance > preferredRange + 1f)
-                {
-                    MoveTo(ClampToGuardZone(heroTarget.transform.position));
-                }
-                else
-                {
-                    StopMoving();
-                    Face(heroTarget.transform.position);
-                    if (specialTimer <= 0f && (HPPercent < 0.55f || heroDistance <= preferredRange)) CastMageSpecial();
-                    else if (attackTimer <= 0f) AttackHero(false);
-                }
-            }
+                HandleMageBehaviour(heroDistance);
             else if (heroDistance > attackRange) MoveTo(ClampToGuardZone(heroTarget.transform.position));
             else
             {
@@ -221,6 +218,87 @@ public class MonsterAI : MonoBehaviour
             MoveTo(GuardPillar.transform.position);
         else
             StopMoving();
+    }
+
+    private void HandleMageBehaviour(float distance)
+    {
+        // Commit to a short escape, then stand and fight even if the hero keeps chasing.
+        if (Time.time < castEndsAt)
+        {
+            StopMoving();
+            Face(heroTarget.transform.position);
+            return;
+        }
+        if (retreating)
+        {
+            if (Time.time < retreatEndsAt && FlatDistance(transform.position, retreatDestination) > 0.35f)
+            {
+                MoveTo(retreatDestination, 0.15f);
+                return;
+            }
+            retreating = false;
+        }
+        if (distance < retreatRange && Time.time >= nextRetreatAt)
+        {
+            nextRetreatAt = Time.time + retreatDuration + retreatCooldown;
+            if (TryChooseRetreatPoint(out retreatDestination))
+            {
+                retreating = true;
+                retreatEndsAt = Time.time + retreatDuration;
+                MoveTo(retreatDestination, 0.15f);
+                return;
+            }
+        }
+        float desiredRange = Mathf.Min(preferredRange, attackRange);
+        if (distance > desiredRange + rangeHysteresis) approaching = true;
+        if (distance <= desiredRange) approaching = false;
+        if (approaching)
+        {
+            Vector3 destination = heroTarget.transform.position;
+            if (GuardPillar != null) destination = ClampToGuardZone(destination);
+            MoveTo(destination, Mathf.Max(0.2f, desiredRange - 0.25f));
+            return;
+        }
+        StopMoving();
+        Face(heroTarget.transform.position);
+        if (distance > attackRange) return;
+        if (specialTimer <= 0 && (HPPercent < 0.55f || distance <= preferredRange))
+        {
+            CastMageSpecial();
+            attackTimer = Mathf.Max(attackTimer, castStandTime);
+            castEndsAt = Time.time + castStandTime;
+        }
+        else if (attackTimer <= 0)
+        {
+            AttackHero(false);
+            castEndsAt = Time.time + castStandTime;
+        }
+    }
+
+    private bool TryChooseRetreatPoint(out Vector3 point)
+    {
+        Vector3 away = transform.position - heroTarget.transform.position;
+        away.y = 0;
+        if (away.sqrMagnitude < 0.01f) away = -transform.forward;
+        away.Normalize();
+        point = transform.position;
+        float bestScore = float.MinValue;
+        for (int i = 0; i < 5; i++)
+        {
+            float angle = i == 0 ? 0 : (i % 2 == 0 ? 1 : -1) * ((i + 1) / 2) * 45;
+            Vector3 candidate = transform.position + Quaternion.Euler(0, angle, 0) * away * retreatDistance;
+            if (GuardPillar != null) candidate = ClampToGuardZone(candidate);
+            if (!NavMesh.SamplePosition(candidate, out NavMeshHit hit, 0.8f, agent.areaMask)) continue;
+            if (GuardPillar != null && !GuardPillar.IsInside(hit.position, 0)) continue;
+            if (FlatDistance(transform.position, hit.position) < 0.6f) continue;
+            if (!agent.CalculatePath(hit.position, retreatPath) || retreatPath.status != NavMeshPathStatus.PathComplete) continue;
+            float score = FlatDistance(hit.position, heroTarget.transform.position);
+            foreach (MonsterAI ally in ActiveMonsters)
+                if (ally != null && ally != this && ally.IsAlive)
+                    score -= Mathf.Max(0, 1.5f - FlatDistance(hit.position, ally.transform.position)) * 2;
+            if (score > bestScore) { bestScore = score; point = hit.position; }
+        }
+        return bestScore > float.MinValue;
     }
 
     private Vector3 ClampToGuardZone(Vector3 desired)
@@ -258,12 +336,14 @@ public class MonsterAI : MonoBehaviour
         if (HPPercent < 0.55f)
         {
             float heal = maxHP * 0.18f;
-            currentHP = Mathf.Min(maxHP, currentHP + heal);
+            heal = Mathf.Min(heal, maxHP - currentHP);
+            currentHP += heal;
+            DamagePopup.Spawn(damagePopupPrefab, transform.position + Vector3.up * 2, heal, DamagePopupKind.Healing);
         }
 
         if (heroTarget != null && heroTarget.IsAlive && FlatDistance(transform.position, heroTarget.transform.position) <= attackRange + 1.5f)
         {
-            MagicProjectile.SpawnLightning(transform.position + Vector3.up * 1.35f, heroTarget.transform.position + Vector3.up);
+            MagicProjectile.SpawnLightning(lightningPrefab, transform.position + Vector3.up * 1.35f, heroTarget.transform.position + Vector3.up);
             Vector3 push = (heroTarget.transform.position - transform.position).normalized;
             heroTarget.TakeDamage(specialDamage, this, push * (knockbackForce + 0.8f), true);
         }
@@ -271,7 +351,7 @@ public class MonsterAI : MonoBehaviour
 
     public float TakeDamage(float amount, bool heavyHit)
     {
-        if (!IsAlive || amount <= 0f) return 0f;
+        if (!IsAlive || amount <= 0f || (spawnProtection != null && spawnProtection.IsProtected)) return 0f;
 
         if (role == MonsterRole.Tank && Random.value < 0.22f)
             amount *= 0.45f;
@@ -280,6 +360,7 @@ public class MonsterAI : MonoBehaviour
         currentHP -= actual;
 
         DamagePopup.Spawn(
+            damagePopupPrefab,
             transform.position + Vector3.up * 1.9f,
             actual,
             DamagePopupKind.DamageToMonster,
@@ -291,36 +372,10 @@ public class MonsterAI : MonoBehaviour
         return actual;
     }
 
-    public void ApplyKnockback(Vector3 velocity, float duration = 0.28f)
+    public void ApplyKnockback(Vector3 velocity)
     {
-        if (!IsAlive || velocity.sqrMagnitude < 0.01f) return;
-        StartCoroutine(KnockbackRoutine(velocity, duration));
-    }
-
-    private IEnumerator KnockbackRoutine(Vector3 velocity, float duration)
-    {
-        beingKnocked = true;
-        if (agent != null && agent.isOnNavMesh) agent.isStopped = true;
-
-        InfiniteMapGenerator map = FindFirstObjectByType<InfiniteMapGenerator>();
-        float time = 0f;
-        while (time < duration && IsAlive)
-        {
-            float damping = 1f - time / duration;
-            Vector3 next = transform.position + velocity * damping * Time.deltaTime;
-            if (map != null) next = map.ClampInsideWorld(next);
-            transform.position = next;
-            if (map != null && map.IsWaterAtWorldPosition(transform.position))
-            {
-                KillByEnvironment();
-                break;
-            }
-            time += Time.deltaTime;
-            yield return null;
-        }
-
-        beingKnocked = false;
-        TryPlaceOnNavMesh();
+        if (!IsAlive || (spawnProtection != null && spawnProtection.IsProtected)) return;
+        knockbackMotor?.Push(velocity);
     }
 
     public void KillByEnvironment()
@@ -334,6 +389,8 @@ public class MonsterAI : MonoBehaviour
     {
         if (!IsAlive) return;
         IsAlive = false;
+        spawnProtection?.End();
+        if (knockbackMotor != null) knockbackMotor.enabled = false;
         ActiveMonsters.Remove(this);
 
         // Phát event NGAY khi HP về 0, trước animation corpse.
@@ -351,7 +408,7 @@ public class MonsterAI : MonoBehaviour
         foreach (Collider c in GetComponentsInChildren<Collider>()) c.enabled = false;
 
         Trigger("Die");
-        ExperienceOrb.Spawn(transform.position, GetXPValue());
+        ExperienceOrb.Spawn(experienceOrbPrefab, transform.position, GetXPValue());
         StartCoroutine(DeathRoutine());
     }
 
@@ -395,34 +452,11 @@ public class MonsterAI : MonoBehaviour
     private void EnsureRuntimeComponents()
     {
         anim = GetComponent<Animator>();
-        if (anim == null)
-        {
-            anim = gameObject.AddComponent<Animator>();
-            RuntimeAnimatorController sharedController = Resources.Load<RuntimeAnimatorController>("Animator/Skeleton_Mage");
-            if (sharedController != null) anim.runtimeAnimatorController = sharedController;
-        }
-        else if (anim.runtimeAnimatorController == null)
-        {
-            RuntimeAnimatorController sharedController = Resources.Load<RuntimeAnimatorController>("Animator/Skeleton_Mage");
-            if (sharedController != null) anim.runtimeAnimatorController = sharedController;
-        }
-
-        Collider col = GetComponent<Collider>();
-        if (col == null)
-        {
-            CapsuleCollider capsule = gameObject.AddComponent<CapsuleCollider>();
-            capsule.center = new Vector3(0f, 1f, 0f);
-            capsule.height = 2f;
-            capsule.radius = 0.45f;
-        }
-
         rb = GetComponent<Rigidbody>();
-        if (rb == null) rb = gameObject.AddComponent<Rigidbody>();
-        rb.isKinematic = true;
-        rb.useGravity = false;
-
         agent = GetComponent<NavMeshAgent>();
-        if (agent == null) agent = gameObject.AddComponent<NavMeshAgent>();
+        if (spawnProtection == null) spawnProtection = GetComponent<SpawnProtection>();
+        if (knockbackMotor == null) knockbackMotor = GetComponent<CombatKnockback>();
+        if (agent == null) Debug.LogError("Monster prefab needs an authored NavMeshAgent.", this);
         ApplyAgentSettings();
     }
 
@@ -451,13 +485,19 @@ public class MonsterAI : MonoBehaviour
         return false;
     }
 
-    private void MoveTo(Vector3 destination)
+    private void MoveTo(Vector3 destination, float stoppingDistance = -1)
     {
         if (agent == null || !agent.enabled || !agent.isOnNavMesh) return;
         agent.isStopped = false;
         agent.speed = moveSpeed;
-        agent.SetDestination(destination);
-        SetSpeed(moveSpeed);
+        agent.stoppingDistance = stoppingDistance >= 0 ? stoppingDistance : Mathf.Max(0.2f, attackRange * 0.8f);
+        if (!agent.hasPath || Time.time >= nextPathUpdate || (destination - lastDestination).sqrMagnitude > 1)
+        {
+            agent.SetDestination(destination);
+            lastDestination = destination;
+            nextPathUpdate = Time.time + 0.2f;
+        }
+        SetSpeed(agent.velocity.magnitude);
     }
 
     private void StopMoving()

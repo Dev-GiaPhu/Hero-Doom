@@ -38,6 +38,21 @@ public class HeroBotAI : MonoBehaviour
     [Tooltip("Khoảng thời gian giữa các lần kiểm tra EXP trong vùng nhặt.")]
     [Range(0.02f, 0.5f)] public float xpPickupCheckInterval = 0.08f;
 
+    [Header("Combat Feedback - authored prefabs")]
+    public DamagePopup damagePopupPrefab;
+    public SpawnProtection spawnProtection;
+    public CombatKnockback knockbackMotor;
+    [Min(0)] public float knockbackForce = 7f;
+    [Min(0)] public float areaKnockbackForce = 9f;
+    [Header("Target Selection")]
+    [Min(0.05f)] public float targetRecheckInterval = 0.35f;
+    [Min(0)] public float currentTargetPreference = 2f;
+
+    [Header("Level Up - AI chooses one of two")]
+    public HeroUpgradeThought upgradeThoughtPrefab;
+    public HeroUpgradeDefinition[] upgradeDefinitions = new HeroUpgradeDefinition[12];
+    private HeroUpgradeThought currentThought;
+
     [Header("Death")]
     public float corpseHoldTime = 2.5f;
     public float shrinkDuration = 1.25f;
@@ -57,7 +72,7 @@ public class HeroBotAI : MonoBehaviour
     private Rigidbody rb;
     private float attackTimer;
     private float xpPickupTimer;
-    private bool beingKnocked;
+    private float targetRecheckTimer;
     private int attackCounter;
 
     void Awake()
@@ -84,7 +99,8 @@ public class HeroBotAI : MonoBehaviour
 
     void Update()
     {
-        if (!IsAlive || beingKnocked) return;
+        if (!IsAlive) return;
+        if (knockbackMotor != null && knockbackMotor.IsActive) { SetSpeed(0); return; }
 
         attackTimer -= Time.deltaTime;
         xpPickupTimer -= Time.deltaTime;
@@ -97,7 +113,12 @@ public class HeroBotAI : MonoBehaviour
 
         if (!TryPlaceOnNavMesh()) return;
 
-        targetMonster = PickBestMonsterTarget();
+        targetRecheckTimer -= Time.deltaTime;
+        if (targetMonster == null || !targetMonster.IsAlive || targetRecheckTimer <= 0)
+        {
+            targetMonster = PickBestMonsterTarget();
+            targetRecheckTimer = Mathf.Max(0.05f, targetRecheckInterval);
+        }
 
         if (targetMonster != null && targetMonster.IsAlive)
         {
@@ -169,6 +190,8 @@ public class HeroBotAI : MonoBehaviour
             score += (1f - monster.HPPercent) * 2.5f;
             if (monster.GuardPillar != null) score += 5f;
 
+            if (monster == targetMonster) score += currentTargetPreference;
+
             if (score > bestScore)
             {
                 bestScore = score;
@@ -227,17 +250,21 @@ public class HeroBotAI : MonoBehaviour
         MonsterAI attackedMonster = targetMonster;
         float actual = attackedMonster.TakeDamage(damage, false);
 
-        float knock = 0.45f + 0.35f * upgradeStacks[(int)HeroUpgradeType.Knockback];
+        float knock = knockbackForce + 1.2f * upgradeStacks[(int)HeroUpgradeType.Knockback];
         Vector3 push = (attackedMonster.transform.position - transform.position).normalized;
 
-        if (attackedMonster.IsAlive)
+        if (attackedMonster.IsAlive && actual > 0)
             attackedMonster.ApplyKnockback(push * knock);
         else if (targetMonster == attackedMonster)
             targetMonster = null;
 
         int lifeSteal = upgradeStacks[(int)HeroUpgradeType.LifeSteal];
         if (lifeSteal > 0 && actual > 0f)
-            currentHP = Mathf.Min(maxHP, currentHP + actual * (0.03f * lifeSteal));
+        {
+            float heal = Mathf.Min(maxHP - currentHP, actual * (0.03f * lifeSteal));
+            currentHP += heal;
+            DamagePopup.Spawn(damagePopupPrefab, transform.position + Vector3.up * 2.1f, heal, DamagePopupKind.Healing);
+        }
 
         int cleave = upgradeStacks[(int)HeroUpgradeType.Cleave];
         if (cleave > 0) DamageNearby(targetMonster, damage * (0.18f + 0.04f * cleave), attackRange + 1.3f, 3);
@@ -258,22 +285,23 @@ public class HeroBotAI : MonoBehaviour
         {
             if (monster == null || !monster.IsAlive || monster == excluded) continue;
             if (FlatDistance(transform.position, monster.transform.position) > radius) continue;
-            monster.TakeDamage(damage, true);
+            float actual = monster.TakeDamage(damage, true);
             Vector3 push = (monster.transform.position - transform.position).normalized;
-            monster.ApplyKnockback(push * 1.2f);
+            if (actual > 0) monster.ApplyKnockback(push * areaKnockbackForce);
             if (++hit >= maxTargets) break;
         }
     }
 
     public float TakeDamage(float amount, MonsterAI source, Vector3 knockback, bool heavyHit)
     {
-        if (!IsAlive || amount <= 0f) return 0f;
+        if (!IsAlive || amount <= 0f || (spawnProtection != null && spawnProtection.IsProtected)) return 0f;
 
         float effectiveArmor = Mathf.Clamp01(armor + 0.04f * upgradeStacks[(int)HeroUpgradeType.Armor]);
         float actual = Mathf.Min(currentHP, amount * (1f - effectiveArmor));
         currentHP -= actual;
 
         DamagePopup.Spawn(
+            damagePopupPrefab,
             transform.position + Vector3.up * 2.05f,
             actual,
             DamagePopupKind.DamageToHero,
@@ -288,7 +316,7 @@ public class HeroBotAI : MonoBehaviour
         else
         {
             Trigger(heavyHit ? "HitHeavy" : "HitLight");
-            if (knockback.sqrMagnitude > 0.01f) ApplyKnockback(knockback, 0.28f);
+            if (knockback.sqrMagnitude > 0.01f) knockbackMotor?.Push(knockback);
         }
 
         return actual;
@@ -320,7 +348,7 @@ public class HeroBotAI : MonoBehaviour
         if (candidates.Count == 0) return;
 
         List<HeroUpgradeType> offered = new();
-        while (offered.Count < Mathf.Min(3, candidates.Count))
+        while (offered.Count < Mathf.Min(2, candidates.Count))
         {
             HeroUpgradeType pick = candidates[Random.Range(0, candidates.Count)];
             if (!offered.Contains(pick)) offered.Add(pick);
@@ -331,9 +359,18 @@ public class HeroBotAI : MonoBehaviour
         foreach (HeroUpgradeType option in offered)
         {
             float score = UpgradeUtility(option);
+            if (monster == targetMonster) score += currentTargetPreference;
+
             if (score > bestScore) { bestScore = score; best = option; }
         }
         ApplyUpgrade(best);
+        HeroUpgradeDefinition definition = System.Array.Find(upgradeDefinitions, d => d != null && d.type == best);
+        if (upgradeThoughtPrefab != null && definition != null)
+        {
+            if (currentThought != null) Destroy(currentThought.gameObject);
+            currentThought = Instantiate(upgradeThoughtPrefab, transform.position + Vector3.up * 3.1f, Quaternion.identity);
+            currentThought.Show(transform, definition, upgradeStacks[(int)best]);
+        }
     }
 
     private float UpgradeUtility(HeroUpgradeType type)
@@ -375,38 +412,6 @@ public class HeroBotAI : MonoBehaviour
         }
     }
 
-    private void ApplyKnockback(Vector3 velocity, float duration)
-    {
-        if (velocity.sqrMagnitude < 0.01f) return;
-        StartCoroutine(KnockbackRoutine(velocity, duration));
-    }
-
-    private IEnumerator KnockbackRoutine(Vector3 velocity, float duration)
-    {
-        beingKnocked = true;
-        if (agent != null && agent.isOnNavMesh) agent.isStopped = true;
-
-        InfiniteMapGenerator map = FindFirstObjectByType<InfiniteMapGenerator>();
-        float time = 0f;
-        while (time < duration && IsAlive)
-        {
-            float damping = 1f - time / duration;
-            Vector3 next = transform.position + velocity * damping * Time.deltaTime;
-            if (map != null) next = map.ClampInsideWorld(next);
-            transform.position = next;
-            if (map != null && map.IsWaterAtWorldPosition(transform.position))
-            {
-                KillByEnvironment();
-                break;
-            }
-            time += Time.deltaTime;
-            yield return null;
-        }
-
-        beingKnocked = false;
-        TryPlaceOnNavMesh();
-    }
-
     public void KillByEnvironment()
     {
         if (!IsAlive) return;
@@ -418,6 +423,9 @@ public class HeroBotAI : MonoBehaviour
     {
         if (!IsAlive) return;
         IsAlive = false;
+        spawnProtection?.End();
+        if (currentThought != null) Destroy(currentThought.gameObject);
+        if (knockbackMotor != null) knockbackMotor.enabled = false;
         StopMoving();
         if (agent != null) agent.enabled = false;
         foreach (Collider c in GetComponentsInChildren<Collider>()) c.enabled = false;
@@ -444,28 +452,11 @@ public class HeroBotAI : MonoBehaviour
     private void EnsureRuntimeComponents()
     {
         anim = GetComponent<Animator>();
-
-        Collider col = GetComponent<Collider>();
-        if (col == null)
-        {
-            CapsuleCollider capsule = gameObject.AddComponent<CapsuleCollider>();
-            capsule.center = new Vector3(0f, 1f, 0f);
-            capsule.height = 2f;
-            capsule.radius = 0.5f;
-        }
-
         rb = GetComponent<Rigidbody>();
-        if (rb == null) rb = gameObject.AddComponent<Rigidbody>();
-        rb.isKinematic = true;
-        rb.useGravity = false;
-
         agent = GetComponent<NavMeshAgent>();
-        if (agent == null) agent = gameObject.AddComponent<NavMeshAgent>();
-        agent.radius = 0.48f;
-        agent.height = 2f;
-        agent.angularSpeed = 720f;
-        agent.acceleration = 24f;
-        agent.obstacleAvoidanceType = ObstacleAvoidanceType.HighQualityObstacleAvoidance;
+        if (spawnProtection == null) spawnProtection = GetComponent<SpawnProtection>();
+        if (knockbackMotor == null) knockbackMotor = GetComponent<CombatKnockback>();
+        if (agent == null) Debug.LogError("Hero prefab needs an authored NavMeshAgent.", this);
     }
 
     private bool TryPlaceOnNavMesh()

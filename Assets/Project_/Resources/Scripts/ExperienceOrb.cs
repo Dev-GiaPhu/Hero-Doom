@@ -30,30 +30,11 @@ public class ExperienceOrb : MonoBehaviour
         Destroy(gameObject);
     }
 
-    public static void Spawn(Vector3 position, float amount)
+    public static void Spawn(ExperienceOrb prefab, Vector3 position, float amount)
     {
-        GameObject orb = GameObject.CreatePrimitive(PrimitiveType.Sphere);
-        orb.name = "HeroXP";
-        orb.transform.position = position + Vector3.up * 0.3f;
-        orb.transform.localScale = Vector3.one * 0.25f;
-
-        Collider col = orb.GetComponent<Collider>();
-        if (col != null) col.isTrigger = true;
-
-        ExperienceOrb xp = orb.AddComponent<ExperienceOrb>();
+        if (prefab == null) return;
+        ExperienceOrb xp = Instantiate(prefab, position + Vector3.up * 0.3f, Quaternion.identity);
         xp.value = Mathf.Max(1f, amount);
-
-        Renderer renderer = orb.GetComponent<Renderer>();
-        if (renderer != null)
-        {
-            Shader shader = Shader.Find("Universal Render Pipeline/Unlit");
-            if (shader != null)
-            {
-                Material mat = new Material(shader);
-                mat.color = new Color(0.25f, 0.9f, 1f, 1f);
-                renderer.material = mat;
-            }
-        }
     }
 
     void Update()

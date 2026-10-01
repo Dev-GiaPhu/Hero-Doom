@@ -1,137 +1,61 @@
 using TMPro;
 using UnityEngine;
 
-public enum DamagePopupKind
-{
-    DamageToHero,
-    DamageToMonster,
-    Healing
-}
+public enum DamagePopupKind { DamageToHero, DamageToMonster, Healing }
 
 public class DamagePopup : MonoBehaviour
 {
-    private const float Lifetime = 0.85f;
-
-    private TextMeshPro text;
+    [Header("Prefab references")]
+    public TMP_Text label;
+    [Header("Motion")]
+    [Min(0.1f)] public float lifetime = 0.85f;
+    public float riseSpeed = 1.5f;
+    public float horizontalSpread = 0.45f;
+    public AnimationCurve scaleOverLife = new AnimationCurve(new Keyframe(0, 0.65f), new Keyframe(0.12f, 1.25f), new Keyframe(0.3f, 1), new Keyframe(1, 0.85f));
+    public AnimationCurve alphaOverLife = new AnimationCurve(new Keyframe(0, 1), new Keyframe(0.45f, 1), new Keyframe(1, 0));
+    [Header("Colors")]
+    public Color heroDamageColor = new Color(1, 0.3f, 0.23f);
+    public Color monsterDamageColor = new Color(1, 0.9f, 0.55f);
+    public Color heavyDamageColor = new Color(1, 0.65f, 0.12f);
+    public Color healingColor = new Color(0.3f, 1, 0.5f);
+    [Min(1)] public float emphasizedScale = 1.4f;
     private Camera targetCamera;
     private float age;
     private Vector3 baseScale;
+    private Vector3 drift;
     private Color baseColor;
 
-    public static void Spawn(
-        Vector3 worldPosition,
-        float amount,
-        DamagePopupKind kind,
-        bool emphasized = false)
+    public static void Spawn(DamagePopup prefab, Vector3 position, float amount, DamagePopupKind kind, bool emphasized = false)
     {
-        if (amount <= 0.01f)
-            return;
-
-        GameObject go =
-            new GameObject(
-                "DamagePopup",
-                typeof(RectTransform),
-                typeof(TextMeshPro));
-
-        go.transform.position = worldPosition;
-
-        TextMeshPro tmp =
-            go.GetComponent<TextMeshPro>();
-
-        tmp.font =
-            TMP_Settings.defaultFontAsset;
-
-        tmp.text =
-            Mathf.Max(1, Mathf.RoundToInt(amount)).ToString();
-
-        tmp.alignment =
-            TextAlignmentOptions.Center;
-
-        tmp.fontStyle =
-            emphasized
-                ? FontStyles.Bold
-                : FontStyles.Normal;
-
-        tmp.fontSize =
-            emphasized
-                ? 5.2f
-                : 4.2f;
-
-        tmp.enableWordWrapping = false;
-
-        Color color;
-
-        switch (kind)
-        {
-            case DamagePopupKind.DamageToHero:
-                color = new Color(1f, 0.34f, 0.24f, 1f);
-                break;
-
-            case DamagePopupKind.Healing:
-                color = new Color(0.38f, 1f, 0.48f, 1f);
-                break;
-
-            default:
-                color = emphasized
-                    ? new Color(1f, 0.76f, 0.20f, 1f)
-                    : new Color(1f, 0.91f, 0.58f, 1f);
-                break;
-        }
-
-        tmp.color = color;
-
-        RectTransform rect =
-            go.GetComponent<RectTransform>();
-
-        rect.sizeDelta =
-            new Vector2(8f, 2f);
-
-        go.transform.localScale =
-            Vector3.one * (emphasized ? 0.19f : 0.16f);
-
-        if (tmp.renderer != null)
-            tmp.renderer.sortingOrder = 80;
-
-        DamagePopup popup =
-            go.AddComponent<DamagePopup>();
-
-        popup.text = tmp;
-        popup.targetCamera = Camera.main;
-        popup.baseScale = go.transform.localScale;
-        popup.baseColor = color;
+        if (prefab == null || amount <= 0.01f) return;
+        DamagePopup popup = Instantiate(prefab, position, Quaternion.identity);
+        popup.Initialize(amount, kind, emphasized);
     }
 
-    void Update()
+    public void Initialize(float amount, DamagePopupKind kind, bool emphasized)
+    {
+        age = 0;
+        targetCamera = Camera.main;
+        baseScale = transform.localScale * (emphasized ? emphasizedScale : 1);
+        baseColor = kind == DamagePopupKind.Healing ? healingColor :
+            kind == DamagePopupKind.DamageToHero ? heroDamageColor : emphasized ? heavyDamageColor : monsterDamageColor;
+        drift = (targetCamera != null ? targetCamera.transform.right : Vector3.right) * Random.Range(-horizontalSpread, horizontalSpread);
+        if (label != null)
+        {
+            label.text = (kind == DamagePopupKind.Healing ? "+" : "") + Mathf.Max(1, Mathf.RoundToInt(amount));
+            label.color = baseColor;
+        }
+    }
+
+    void LateUpdate()
     {
         age += Time.deltaTime;
-
-        float normalized =
-            Mathf.Clamp01(age / Lifetime);
-
-        transform.position +=
-            (Vector3.up * 1.15f + Vector3.right * 0.08f)
-            * Time.deltaTime;
-
-        if (targetCamera == null)
-            targetCamera = Camera.main;
-
-        if (targetCamera != null)
-            transform.rotation = targetCamera.transform.rotation;
-
-        float punch =
-            1f + Mathf.Sin(normalized * Mathf.PI) * 0.22f;
-
-        transform.localScale =
-            baseScale * punch;
-
-        if (text != null)
-        {
-            Color c = baseColor;
-            c.a = 1f - Mathf.SmoothStep(0f, 1f, normalized);
-            text.color = c;
-        }
-
-        if (age >= Lifetime)
-            Destroy(gameObject);
+        float t = Mathf.Clamp01(age / Mathf.Max(0.1f, lifetime));
+        transform.position += (Vector3.up * riseSpeed + drift) * Time.deltaTime;
+        if (targetCamera == null) targetCamera = Camera.main;
+        if (targetCamera != null) transform.rotation = targetCamera.transform.rotation;
+        transform.localScale = baseScale * scaleOverLife.Evaluate(t);
+        if (label != null) label.color = new Color(baseColor.r, baseColor.g, baseColor.b, baseColor.a * alphaOverLife.Evaluate(t));
+        if (t >= 1) Destroy(gameObject);
     }
 }
