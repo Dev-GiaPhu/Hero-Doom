@@ -196,6 +196,26 @@ public class HeroBotAI : MonoBehaviour
         currentHP = maxHP;
     }
 
+    public void RestoreProgression(int level, float experience, int[] stacks)
+    {
+        Level = Mathf.Max(1, level);
+        Experience = Mathf.Max(0f, experience);
+
+        for (int i = 0; i < upgradeStacks.Length; i++)
+            upgradeStacks[i] = stacks != null && i < stacks.Length ? Mathf.Clamp(stacks[i], 0, 5) : 0;
+
+        // Reapply permanent effects stored in stacks after a fresh prefab instance is spawned.
+        int maxHealthStacks = upgradeStacks[(int)HeroUpgradeType.MaxHealth];
+        if (maxHealthStacks > 0)
+        {
+            float baseMax = maxHP;
+            for (int i = 0; i < maxHealthStacks; i++)
+                baseMax *= 1.12f;
+            maxHP = baseMax;
+            currentHP = maxHP;
+        }
+    }
+
     private MonsterAI PickBestMonsterTarget()
     {
         MonsterAI best = null;
@@ -603,6 +623,7 @@ public class HeroBotAI : MonoBehaviour
     {
         if (!IsAlive || amount <= 0f) return;
         Experience += amount;
+        HeroDoomGameManager.Instance?.SaveHeroProgression(this);
 
         while (Experience >= ExperienceToNext)
         {
@@ -639,6 +660,7 @@ public class HeroBotAI : MonoBehaviour
             if (score > bestScore) { bestScore = score; best = option; }
         }
         ApplyUpgrade(best);
+        HeroDoomGameManager.Instance?.SaveHeroProgression(this);
         HeroUpgradeDefinition definition = System.Array.Find(upgradeDefinitions, d => d != null && d.type == best);
         if (upgradeThoughtPrefab != null && definition != null)
         {
