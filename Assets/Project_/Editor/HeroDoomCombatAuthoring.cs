@@ -235,8 +235,8 @@ public static class HeroDoomCombatAuthoring
         fillRect.offsetMax = Vector2.zero;
         Image fill = fillGo.GetComponent<Image>();
         fill.color = new Color(0.25f, 0.9f, 0.35f, 1f);
-        fill.type = Image.Type.Filled;
-        fill.fillMethod = Image.FillMethod.Horizontal;
+        fill.type = UnityEngine.UI.Image.Type.Filled;
+        fill.fillMethod = UnityEngine.UI.Image.FillMethod.Horizontal;
         fill.fillOrigin = 0;
         fill.fillAmount = 1f;
         fill.raycastTarget = false;
