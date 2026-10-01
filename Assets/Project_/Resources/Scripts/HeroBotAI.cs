@@ -359,7 +359,10 @@ public class HeroBotAI : MonoBehaviour
         foreach (HeroUpgradeType option in offered)
         {
             float score = UpgradeUtility(option);
-            if (monster == targetMonster) score += currentTargetPreference;
+
+            // Small noise keeps the Hero from producing the exact same build every run
+            // while still strongly preferring upgrades that answer the current battlefield.
+            score += Random.Range(-0.35f, 0.35f);
 
             if (score > bestScore) { bestScore = score; best = option; }
         }
@@ -377,23 +380,42 @@ public class HeroBotAI : MonoBehaviour
     {
         float hpRatio = currentHP / Mathf.Max(1f, maxHP);
         int nearby = 0;
+        int nearbyMelee = 0;
+        int nearbyMage = 0;
+        int nearbyTank = 0;
+        int nearbyAssassin = 0;
+
         foreach (MonsterAI m in MonsterAI.ActiveMonsters)
-            if (m != null && m.IsAlive && FlatDistance(transform.position, m.transform.position) < 5f) nearby++;
+        {
+            if (m == null || !m.IsAlive) continue;
+
+            float distance = FlatDistance(transform.position, m.transform.position);
+            if (distance > 7f) continue;
+
+            nearby++;
+            switch (m.role)
+            {
+                case MonsterRole.Mage: nearbyMage++; break;
+                case MonsterRole.Tank: nearbyTank++; break;
+                case MonsterRole.Assassin: nearbyAssassin++; break;
+                default: nearbyMelee++; break;
+            }
+        }
 
         switch (type)
         {
-            case HeroUpgradeType.MaxHealth: return 5f + (1f - hpRatio) * 5f;
-            case HeroUpgradeType.Damage: return 7f;
-            case HeroUpgradeType.AttackSpeed: return 6.5f;
-            case HeroUpgradeType.MoveSpeed: return 4f;
-            case HeroUpgradeType.Armor: return 5f + nearby;
-            case HeroUpgradeType.PickupRange: return 3.5f;
-            case HeroUpgradeType.Cleave: return 3f + nearby * 1.4f;
-            case HeroUpgradeType.Knockback: return 3.5f + nearby;
-            case HeroUpgradeType.LifeSteal: return 3f + (1f - hpRatio) * 8f;
-            case HeroUpgradeType.MultiStrike: return 5.5f + nearby * 0.5f;
-            case HeroUpgradeType.Shockwave: return 2.5f + nearby * 1.8f;
-            case HeroUpgradeType.Execution: return 5f;
+            case HeroUpgradeType.MaxHealth: return 5f + (1f - hpRatio) * 7f + nearbyAssassin * 0.8f;
+            case HeroUpgradeType.Damage: return 6f + nearbyTank * 1.8f;
+            case HeroUpgradeType.AttackSpeed: return 5.8f + nearbyTank * 1.2f;
+            case HeroUpgradeType.MoveSpeed: return 3.8f + nearbyMage * 0.9f;
+            case HeroUpgradeType.Armor: return 4.5f + nearbyMelee * 0.8f + nearbyAssassin * 1.4f;
+            case HeroUpgradeType.PickupRange: return 3.2f;
+            case HeroUpgradeType.Cleave: return 2.5f + nearby * 1.45f;
+            case HeroUpgradeType.Knockback: return 3f + nearbyMelee * 0.8f + nearbyAssassin * 1.1f;
+            case HeroUpgradeType.LifeSteal: return 2.8f + (1f - hpRatio) * 9f;
+            case HeroUpgradeType.MultiStrike: return 5f + nearbyTank * 0.8f + nearby * 0.25f;
+            case HeroUpgradeType.Shockwave: return 2f + nearby * 1.75f;
+            case HeroUpgradeType.Execution: return 4.6f + nearbyTank * 0.7f;
             default: return 1f;
         }
     }
