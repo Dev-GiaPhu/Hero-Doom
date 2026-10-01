@@ -344,7 +344,7 @@ public class MonsterAI : MonoBehaviour
         float desiredRadius = Mathf.Max(0.8f, GuardPillar.captureRadius * 0.55f);
         float heroDistance = FlatDistance(transform.position, heroTarget.transform.position);
 
-        if (HeroIsRelevantToGuardZone(heroDistance) && distanceFromCenter <= desiredRadius)
+        if (distanceFromCenter <= desiredRadius)
             return 0f;
 
         float outside = Mathf.Clamp01((distanceFromCenter - desiredRadius) / Mathf.Max(1f, GuardPillar.captureRadius));
