@@ -1,4 +1,5 @@
 using System;
+using System.Collections;
 using UnityEngine;
 using UnityEngine.AI;
 using UnityEngine.EventSystems;
@@ -48,13 +49,20 @@ public class PlayerSpawner : MonoBehaviour
     public int SelectedMonsterIndex => currentMonsterIndex;
     public event Action<int> SelectedMonsterChanged;
 
+    [Header("Spawn click feedback")]
+    [Min(0.05f)] public float crosshairPulseDuration = 0.18f;
+    [Range(1f, 1.5f)] public float crosshairPulseScale = 1.16f;
+
     private Camera mainCam;
     private InfiniteMapGenerator map;
+    private Vector3 crosshairBaseScale = Vector3.one;
+    private Coroutine crosshairPulseRoutine;
 
     void Start()
     {
         mainCam = Camera.main;
         map = FindFirstObjectByType<InfiniteMapGenerator>();
+        if (crosshairIndicator != null) crosshairBaseScale = crosshairIndicator.localScale;
         SelectedMonsterChanged?.Invoke(currentMonsterIndex);
     }
 
@@ -142,8 +150,44 @@ public class PlayerSpawner : MonoBehaviour
     {
         if (mainCam == null || Mouse.current == null) return;
         Ray ray = mainCam.ScreenPointToRay(Mouse.current.position.ReadValue());
-        if (Physics.Raycast(ray, out RaycastHit hit, 500f, groundLayer))
-            TrySpawn(currentMonsterIndex, hit.point, true);
+        if (Physics.Raycast(ray, out RaycastHit hit, 500f, groundLayer) &&
+            TrySpawn(currentMonsterIndex, hit.point, true))
+        {
+            PulseCrosshair();
+        }
+    }
+
+    private void PulseCrosshair()
+    {
+        if (crosshairIndicator == null) return;
+        if (crosshairPulseRoutine != null) StopCoroutine(crosshairPulseRoutine);
+        crosshairPulseRoutine = StartCoroutine(CrosshairPulseRoutine());
+    }
+
+    private IEnumerator CrosshairPulseRoutine()
+    {
+        float duration = Mathf.Max(0.05f, crosshairPulseDuration);
+        float half = duration * 0.5f;
+        float t = 0f;
+        Vector3 peak = crosshairBaseScale * crosshairPulseScale;
+
+        while (t < half)
+        {
+            t += Time.unscaledDeltaTime;
+            crosshairIndicator.localScale = Vector3.Lerp(crosshairBaseScale, peak, Mathf.SmoothStep(0f, 1f, t / half));
+            yield return null;
+        }
+
+        t = 0f;
+        while (t < half)
+        {
+            t += Time.unscaledDeltaTime;
+            crosshairIndicator.localScale = Vector3.Lerp(peak, crosshairBaseScale, Mathf.SmoothStep(0f, 1f, t / half));
+            yield return null;
+        }
+
+        crosshairIndicator.localScale = crosshairBaseScale;
+        crosshairPulseRoutine = null;
     }
 
     public bool TryAutoSpawn(int slot, bool chargeGold)
