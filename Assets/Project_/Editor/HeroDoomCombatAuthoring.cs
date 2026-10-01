@@ -79,6 +79,7 @@ public static class HeroDoomCombatAuthoring
                 MonsterAI ai = root.GetComponent<MonsterAI>();
                 AuthorPhysics(root, false);
                 ai.role = (MonsterRole)i;
+                EnsureMonsterHealthBar(root);
                 ai.damagePopupPrefab = damage; ai.experienceOrbPrefab = xp;
                 ai.knockbackMotor = root.GetComponent<CombatKnockback>();
                 ai.knockbackMotor.resistance = i == 2 ? 0.4f : 0;
@@ -183,15 +184,84 @@ public static class HeroDoomCombatAuthoring
         finally { PrefabUtility.UnloadPrefabContents(root); }
     }
 
+    private static void EnsureMonsterHealthBar(GameObject root)
+    {
+        MonsterAI monster = root.GetComponent<MonsterAI>();
+        if (monster == null) return;
+
+        Transform existing = root.transform.Find("Monster Health Bar");
+        if (existing != null)
+            Object.DestroyImmediate(existing.gameObject);
+
+        GameObject canvasGo = new GameObject(
+            "Monster Health Bar",
+            typeof(RectTransform),
+            typeof(Canvas),
+            typeof(CanvasGroup),
+            typeof(MonsterHealthBar));
+
+        RectTransform canvasRect = canvasGo.GetComponent<RectTransform>();
+        canvasRect.SetParent(root.transform, false);
+        canvasRect.sizeDelta = new Vector2(2.8f, 0.34f);
+        canvasRect.localPosition = new Vector3(0f, 2.25f, 0f);
+        canvasRect.localScale = Vector3.one * 0.0125f;
+
+        Canvas canvas = canvasGo.GetComponent<Canvas>();
+        canvas.renderMode = RenderMode.WorldSpace;
+        canvas.sortingOrder = 105;
+
+        CanvasGroup group = canvasGo.GetComponent<CanvasGroup>();
+        group.alpha = 0f;
+        group.interactable = false;
+        group.blocksRaycasts = false;
+
+        GameObject bgGo = new GameObject("Background", typeof(RectTransform), typeof(Image));
+        RectTransform bgRect = bgGo.GetComponent<RectTransform>();
+        bgRect.SetParent(canvasRect, false);
+        bgRect.anchorMin = Vector2.zero;
+        bgRect.anchorMax = Vector2.one;
+        bgRect.offsetMin = Vector2.zero;
+        bgRect.offsetMax = Vector2.zero;
+        Image bg = bgGo.GetComponent<Image>();
+        bg.color = new Color(0.04f, 0.055f, 0.06f, 0.92f);
+        bg.raycastTarget = false;
+
+        GameObject fillGo = new GameObject("Fill", typeof(RectTransform), typeof(Image));
+        RectTransform fillRect = fillGo.GetComponent<RectTransform>();
+        fillRect.SetParent(bgRect, false);
+        fillRect.anchorMin = new Vector2(0.04f, 0.16f);
+        fillRect.anchorMax = new Vector2(0.96f, 0.84f);
+        fillRect.offsetMin = Vector2.zero;
+        fillRect.offsetMax = Vector2.zero;
+        Image fill = fillGo.GetComponent<Image>();
+        fill.color = new Color(0.35f, 0.9f, 0.45f, 1f);
+        fill.type = Image.Type.Filled;
+        fill.fillMethod = Image.FillMethod.Horizontal;
+        fill.fillOrigin = 0;
+        fill.fillAmount = 1f;
+        fill.raycastTarget = false;
+
+        MonsterHealthBar bar = canvasGo.GetComponent<MonsterHealthBar>();
+        bar.monster = monster;
+        bar.canvasGroup = group;
+        bar.fill = fill;
+        bar.visualRoot = canvasRect;
+        bar.worldOffset = new Vector3(0f, 2.25f, 0f);
+        bar.fadeInDuration = 0.12f;
+        bar.fadeOutDuration = 0.16f;
+        bar.hiddenScale = 0.78f;
+    }
+
     private static DamagePopup CreateDamage()
     {
         GameObject go = new GameObject("Damage Number", typeof(RectTransform), typeof(TextMeshPro), typeof(DamagePopup));
         TextMeshPro text = go.GetComponent<TextMeshPro>();
-        text.font = TMP_Settings.defaultFontAsset; text.text = "128"; text.fontSize = 5.5f;
+        text.font = TMP_Settings.defaultFontAsset; text.text = "128"; text.fontSize = 9f;
         text.fontStyle = FontStyles.Bold; text.alignment = TextAlignmentOptions.Center;
         text.textWrappingMode = TextWrappingModes.NoWrap; text.color = Gold;
-        text.rectTransform.sizeDelta = new Vector2(5, 2); text.renderer.sortingOrder = 100;
-        go.transform.localScale = Vector3.one * 0.3f;
+        text.outlineWidth = 0.18f; text.outlineColor = new Color(0.05f, 0.03f, 0.02f, 0.9f);
+        text.rectTransform.sizeDelta = new Vector2(7.5f, 3f); text.renderer.sortingOrder = 120;
+        go.transform.localScale = Vector3.one * 0.38f;
         go.GetComponent<DamagePopup>().label = text;
         GameObject prefab = PrefabUtility.SaveAsPrefabAsset(go, Root + "/Prefabs/Combat/Damage Number.prefab");
         Object.DestroyImmediate(go); return prefab.GetComponent<DamagePopup>();
@@ -458,6 +528,7 @@ public static class HeroDoomCombatAuthoring
         {
             var m = spawner.GetPrefab(i).GetComponent<MonsterAI>();
             if (m.damagePopupPrefab == null || m.experienceOrbPrefab == null || m.spawnProtection == null || m.knockbackMotor == null) throw new Exception("Monster feedback missing: " + i);
+            if (m.GetComponentInChildren<MonsterHealthBar>(true) == null) throw new Exception("Monster health bar missing: " + i);
             if (m.GetComponent<NavMeshAgent>() == null || !m.GetComponent<Rigidbody>().isKinematic) throw new Exception("Physics missing: " + i);
             if (i == 1 && (m.mageProjectilePrefab == null || m.mageProjectilePrefab.GetComponent<MagicProjectile>() == null || m.lightningPrefab == null)) throw new Exception("Mage effects missing.");
             report += m.name + ": feedback, protection, navigation OK\n";
