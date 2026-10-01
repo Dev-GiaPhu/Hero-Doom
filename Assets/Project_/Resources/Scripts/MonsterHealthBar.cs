@@ -12,6 +12,9 @@ public class MonsterHealthBar : MonoBehaviour
     [Min(0.02f)] public float fadeInDuration = 0.12f;
     [Min(0.02f)] public float fadeOutDuration = 0.16f;
     [Range(0.5f, 1f)] public float hiddenScale = 0.78f;
+    public Color healthyColor = new Color(0.25f, 0.9f, 0.35f, 1f);
+    public Color woundedColor = new Color(1f, 0.72f, 0.12f, 1f);
+    public Color criticalColor = new Color(1f, 0.2f, 0.12f, 1f);
 
     private Camera targetCamera;
     private float alpha;
@@ -41,7 +44,14 @@ public class MonsterHealthBar : MonoBehaviour
         float speed = 1f / Mathf.Max(0.02f, duration);
         alpha = Mathf.MoveTowards(alpha, shouldShow ? 1f : 0f, speed * Time.deltaTime);
 
-        if (fill != null) fill.fillAmount = hp01;
+        if (fill != null)
+        {
+            fill.fillAmount = hp01;
+            if (hp01 >= 0.5f)
+                fill.color = Color.Lerp(woundedColor, healthyColor, (hp01 - 0.5f) / 0.5f);
+            else
+                fill.color = Color.Lerp(criticalColor, woundedColor, hp01 / 0.5f);
+        }
 
         transform.position = monster.transform.position + worldOffset;
         if (targetCamera == null) targetCamera = Camera.main;
