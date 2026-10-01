@@ -23,7 +23,7 @@ public class HeroUpgradeThought : MonoBehaviour
         age = 0;
         targetCamera = Camera.main;
         if (upgradeIcon != null) upgradeIcon.sprite = thinkingIcon;
-        if (caption != null) caption.text = "...";
+        if (caption != null) caption.gameObject.SetActive(false);
     }
 
     void LateUpdate()
@@ -36,7 +36,9 @@ public class HeroUpgradeThought : MonoBehaviour
         if (age >= thinkingDuration && choice != null)
         {
             if (upgradeIcon != null) upgradeIcon.sprite = choice.icon;
-            if (caption != null) caption.text = choice.displayName + " " + rank;
+            // Design intent: only the thought/upgrade icon is visible above the Hero.
+            // The chosen upgrade name stays hidden to keep the battlefield readable.
+            if (caption != null) caption.gameObject.SetActive(false);
         }
         if (age >= thinkingDuration + resultDuration) Destroy(gameObject);
     }
