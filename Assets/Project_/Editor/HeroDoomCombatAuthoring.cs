@@ -342,12 +342,13 @@ public static class HeroDoomCombatAuthoring
         }
 
         mat.shader = shader;
-        if (mat.HasProperty("_Color")) mat.SetColor("_Color", new Color(0.15f, 0.95f, 1f, 1f));
-        if (mat.HasProperty("_Intensity")) mat.SetFloat("_Intensity", 5f);
+        if (mat.HasProperty("_Color")) mat.SetColor("_Color", new Color(0.05f, 1f, 1f, 1f));
+        if (mat.HasProperty("_Intensity")) mat.SetFloat("_Intensity", 7f);
         if (mat.HasProperty("_Radius")) mat.SetFloat("_Radius", 0.38f);
-        if (mat.HasProperty("_Thickness")) mat.SetFloat("_Thickness", 0.055f);
-        if (mat.HasProperty("_Softness")) mat.SetFloat("_Softness", 0.025f);
+        if (mat.HasProperty("_Thickness")) mat.SetFloat("_Thickness", 0.085f);
+        if (mat.HasProperty("_Softness")) mat.SetFloat("_Softness", 0.035f);
         if (mat.HasProperty("_Opacity")) mat.SetFloat("_Opacity", 1f);
+        mat.renderQueue = 3100;
         EditorUtility.SetDirty(mat);
         return mat;
     }
@@ -356,11 +357,13 @@ public static class HeroDoomCombatAuthoring
     {
         GameObject go = GameObject.CreatePrimitive(PrimitiveType.Quad); go.name = "Spawn Protection Ring";
         Object.DestroyImmediate(go.GetComponent<Collider>());
-        go.transform.localPosition = new Vector3(0, 0.14f, 0);
+        go.transform.localPosition = new Vector3(0, 0.28f, 0);
         go.transform.localRotation = Quaternion.Euler(90, 0, 0);
-        go.transform.localScale = Vector3.one * 3.4f;
+        go.transform.localScale = Vector3.one * 4.2f;
         Renderer renderer = go.GetComponent<Renderer>(); renderer.sharedMaterial = mat;
-        renderer.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off; renderer.receiveShadows = false;
+        renderer.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+        renderer.receiveShadows = false;
+        renderer.sortingOrder = 220;
         GameObject prefab = PrefabUtility.SaveAsPrefabAsset(go, Root + "/Prefabs/Combat/Spawn Protection Ring.prefab");
         Object.DestroyImmediate(go); return prefab;
     }
@@ -754,11 +757,21 @@ public static class HeroDoomCombatAuthoring
         {
             var m = spawner.GetPrefab(i).GetComponent<MonsterAI>();
             if (m.damagePopupPrefab == null || m.experienceOrbPrefab == null || m.spawnProtection == null || m.knockbackMotor == null) throw new Exception("Monster feedback missing: " + i);
+            if (m.spawnProtection.ringVisual == null || m.spawnProtection.ringRenderer == null || m.spawnProtection.ringRenderer.sharedMaterial == null)
+                throw new Exception("Monster protection ring is not authored: " + i);
             if (m.GetComponentInChildren<MonsterHealthBar>(true) == null) throw new Exception("Monster health bar missing: " + i);
             if (m.GetComponent<NavMeshAgent>() == null || !m.GetComponent<Rigidbody>().isKinematic) throw new Exception("Physics missing: " + i);
             if (i == 1 && (m.mageProjectilePrefab == null || m.mageProjectilePrefab.GetComponent<MagicProjectile>() == null || m.lightningPrefab == null)) throw new Exception("Mage effects missing.");
             report += m.name + ": feedback, protection, navigation OK\n";
         }
+        HeroBotAI heroInScene = Object.FindFirstObjectByType<HeroBotAI>();
+        if (heroInScene != null &&
+            (heroInScene.spawnProtection == null ||
+             heroInScene.spawnProtection.ringVisual == null ||
+             heroInScene.spawnProtection.ringRenderer == null ||
+             heroInScene.spawnProtection.ringRenderer.sharedMaterial == null))
+            throw new Exception("Hero protection ring is not authored.");
+
         HeroHUDController heroHud = Object.FindFirstObjectByType<HeroHUDController>();
         if (heroHud == null ||
             heroHud.progressionRoot == null ||
