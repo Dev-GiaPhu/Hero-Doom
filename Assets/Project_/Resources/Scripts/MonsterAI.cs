@@ -366,7 +366,7 @@ public class MonsterAI : MonoBehaviour
             DamagePopupKind.DamageToMonster,
             heavyHit);
 
-        if (currentHP <= 0f) Die();
+        if (currentHP <= 0f) Die(true);
         else Trigger(heavyHit ? "HitHeavy" : "HitLight");
 
         return actual;
@@ -382,10 +382,10 @@ public class MonsterAI : MonoBehaviour
     {
         if (!IsAlive) return;
         currentHP = 0f;
-        Die();
+        Die(false);
     }
 
-    private void Die()
+    private void Die(bool dropExperience)
     {
         if (!IsAlive) return;
         IsAlive = false;
@@ -408,7 +408,8 @@ public class MonsterAI : MonoBehaviour
         foreach (Collider c in GetComponentsInChildren<Collider>()) c.enabled = false;
 
         Trigger("Die");
-        ExperienceOrb.Spawn(experienceOrbPrefab, transform.position, GetXPValue());
+        if (dropExperience)
+            ExperienceOrb.Spawn(experienceOrbPrefab, transform.position, GetXPValue());
         StartCoroutine(DeathRoutine());
     }
 
