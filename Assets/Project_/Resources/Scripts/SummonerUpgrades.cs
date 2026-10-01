@@ -8,7 +8,7 @@ public class SummonerUpgrades : MonoBehaviour
     public TMPro.TMP_Text armyCountLabel;
     [Tooltip("Order: Basic, Mage, Tank, Assassin. Assets contain all balancing values.")]
     public MonsterUpgradeDefinition[] definitions = new MonsterUpgradeDefinition[4];
-    [Min(1)] public int maxAliveMonsters = 60;
+    [Min(1)] public int maxAliveMonsters = 36;
     [Min(0.1f)] public float minimumTimeBetweenAutoSpawns = 0.4f;
     [Min(0.1f)] public float failedSpawnRetryDelay = 1f;
     [SerializeField] private int[] powerLevels = new int[4];
@@ -39,7 +39,12 @@ public class SummonerUpgrades : MonoBehaviour
         }
     }
 
-    public bool IsAutoUnlocked(int slot) => slot == 0 || autoLevels[slot - 1] >= definitions[slot].previousMonsterAutoLevelRequired;
+    public bool IsAutoUnlocked(int slot)
+    {
+        if (slot <= 0) return true;
+        if (slot >= definitions.Length || definitions[slot] == null || definitions[slot - 1] == null) return false;
+        return autoLevels[slot - 1] >= definitions[slot].previousMonsterAutoLevelRequired;
+    }
 
     public bool CanBuyPower(int slot) => definitions[slot] != null && gameManager != null &&
         powerLevels[slot] < definitions[slot].maxPowerLevel && gameManager.CanAfford(definitions[slot].PowerCost(powerLevels[slot]));
