@@ -53,7 +53,9 @@ public static class HeroDoomCombatAuthoring
         if (manager == null || spawner == null) throw new Exception("Missing GameManager or PlayerSpawner.");
         var panel = GameObject.Find("Canvas/Right Panel");
         if (panel == null) throw new Exception("Missing Canvas/Right Panel.");
-        if (panel.transform.Find("Summoner Upgrades") != null) throw new Exception("Panel already authored. Edit the saved objects instead of rebuilding.");
+        Transform existingUpgradePanel = panel.transform.Find("Summoner Upgrades");
+        if (existingUpgradePanel != null)
+            Undo.DestroyObjectImmediate(existingUpgradePanel.gameObject);
         DamagePopup damage = CreateDamage();
         ExperienceOrb xp = CreateXP();
         LineRenderer lightning = CreateLightning();
@@ -249,17 +251,30 @@ public static class HeroDoomCombatAuthoring
         string[] names = { "Skeleton", "Mage", "Tank", "Assassin" };
         string path = Root + "/Upgrades/" + names[slot] + ".asset";
         MonsterUpgradeDefinition d = AssetDatabase.LoadAssetAtPath<MonsterUpgradeDefinition>(path);
-        if (d != null) return d;
-        d = ScriptableObject.CreateInstance<MonsterUpgradeDefinition>();
+        if (d == null)
+        {
+            d = ScriptableObject.CreateInstance<MonsterUpgradeDefinition>();
+            AssetDatabase.CreateAsset(d, path);
+        }
+
         d.role = (MonsterRole)slot; d.displayName = names[slot]; d.icon = icon;
+        d.maxPowerLevel = 10;
         d.basePowerCost = new[] { 40, 80, 140, 120 }[slot];
-        d.baseAutoCost = new[] { 80, 160, 280, 360 }[slot];
+        d.powerCostGrowth = new[] { 1.45f, 1.50f, 1.55f, 1.55f }[slot];
+        d.healthPerLevel = new[] { 0.12f, 0.10f, 0.16f, 0.08f }[slot];
+        d.damagePerLevel = new[] { 0.10f, 0.13f, 0.08f, 0.15f }[slot];
+
         d.maxAutoLevel = 6;
+        d.baseAutoCost = new[] { 80, 160, 280, 360 }[slot];
+        d.autoCostGrowth = new[] { 1.60f, 1.65f, 1.70f, 1.75f }[slot];
         d.previousMonsterAutoLevelRequired = slot == 0 ? 0 : 3;
         d.startingInterval = new[] { 18, 24, 30, 34 }[slot];
+        d.intervalMultiplier = new[] { 0.75f, 0.78f, 0.80f, 0.80f }[slot];
         d.minimumInterval = new[] { 4, 6, 8, 10 }[slot];
         d.maxAlive = new[] { 18, 12, 8, 8 }[slot];
-        AssetDatabase.CreateAsset(d, path); return d;
+        d.chargeGoldPerAutoSummon = false;
+        EditorUtility.SetDirty(d);
+        return d;
     }
 
     private static HeroUpgradeDefinition[] CreateHeroDefinitions()
@@ -359,7 +374,7 @@ public static class HeroDoomCombatAuthoring
         root.AddComponent<Image>().color = Ink;
         Text("Heading", root.transform, "SUMMONER'S GRIMOIRE", 28, 22, 20, 38, 27, Gold);
         Text("Subtitle", root.transform, "Strengthen your army. Automate summons.", 28, 60, 16, 26, 17, Mint);
-        upgrades.armyCountLabel = Text("Army Capacity", root.transform, "ARMY  0 / 60", 28, 93, 20, 26, 18, Color.white);
+        upgrades.armyCountLabel = Text("Army Capacity", root.transform, "ARMY  0 / 36", 28, 93, 20, 26, 18, Color.white);
         Image("Header Divider", root.transform, Mint * new Color(1,1,1,0.3f), 28, 126, 28, 2);
         for (int i = 0; i < 4; i++)
         {
@@ -370,7 +385,7 @@ public static class HeroDoomCombatAuthoring
             icon.rectTransform.anchorMax = new Vector2(0,1); icon.rectTransform.sizeDelta = new Vector2(38,38);
             icon.sprite = d.icon; icon.preserveAspect = true; controller.icon = icon;
             controller.title = Text("Monster Name", card.transform, d.displayName, 66, 9, 12, 28, 23, Gold);
-            controller.stats = Text("Power Bonuses", card.transform, "HP +0%   ATK +0%", 66, 37, 12, 22, 16, Mint);
+            controller.stats = Text("Power Bonuses", card.transform, "SUMMON 0 G   FIELD 0/0\nHP +0%   ATK +0%", 66, 34, 12, 30, 14, Mint);
             controller.powerButton = Button("Upgrade Power", card.transform, 68, new Color(0.3f, 0.23f, 0.12f), out TMP_Text power);
             controller.powerLabel = power;
             controller.autoButton = Button("Upgrade Automation", card.transform, 111, new Color(0.12f, 0.28f, 0.25f), out TMP_Text auto);
@@ -382,7 +397,7 @@ public static class HeroDoomCombatAuthoring
             progress.sprite = AssetDatabase.GetBuiltinExtraResource<Sprite>("UI/Skin/UISprite.psd"); progress.fillAmount = 0; controller.progress = progress;
             controller.Refresh();
         }
-        Text("Automation Help", root.transform, "AUTO unlock chain: previous monster AUTO 3.\nRanks cap at 10. Timed summons cost no extra gold.", 28, 990, 20, 54, 16, Mint).textWrappingMode = TextWrappingModes.Normal;
+        Text("Automation Help", root.transform, "AUTO unlock chain: previous monster AUTO Lv.3.\nAUTO caps at Lv.6. Global army cap: 36. Timed summons cost no extra gold.", 28, 990, 20, 64, 16, Mint).textWrappingMode = TextWrappingModes.Normal;
         // Save the exact layout as a reusable prefab; scene bindings remain on the actual scene objects.
         PrefabUtility.SaveAsPrefabAsset(root, Root + "/Prefabs/Combat/Summoner Upgrade Panel.prefab");
     }
@@ -405,7 +420,22 @@ public static class HeroDoomCombatAuthoring
         }
         var cards = Object.FindObjectsByType<MonsterUpgradeCard>(FindObjectsInactive.Include, FindObjectsSortMode.None);
         if (cards.Length != 4 || cards.Any(c => c.upgrades == null || c.powerButton == null || c.autoButton == null)) throw new Exception("Expected four authored cards with bindings.");
-        report += "4 authored upgrade cards OK\nShader Graph: no shader errors\n";
+
+        SummonerUpgrades upgrades = spawner.upgrades;
+        if (upgrades.maxAliveMonsters != 36) throw new Exception("Global monster cap should be 36.");
+        int[] expectedCaps = { 18, 12, 8, 8 };
+        float[] expectedMinimumIntervals = { 4f, 6f, 8f, 10f };
+        for (int i = 0; i < 4; i++)
+        {
+            MonsterUpgradeDefinition d = upgrades.definitions[i];
+            if (d == null) throw new Exception("Missing upgrade definition: " + i);
+            if (d.maxAutoLevel != 6) throw new Exception("AUTO max level should be 6: " + d.displayName);
+            if (d.maxAlive != expectedCaps[i]) throw new Exception("Wrong per-monster cap: " + d.displayName);
+            if (Mathf.Abs(d.minimumInterval - expectedMinimumIntervals[i]) > 0.01f) throw new Exception("Wrong minimum interval: " + d.displayName);
+            if (i > 0 && d.previousMonsterAutoLevelRequired != 3) throw new Exception("AUTO dependency should require previous Lv.3: " + d.displayName);
+        }
+
+        report += "4 authored upgrade cards OK\nSummoner caps and AUTO progression OK\nShader Graph: no shader errors\n";
         File.WriteAllText(Work + "/result.txt", report);
     }
 }
