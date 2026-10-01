@@ -1,0 +1,31 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 38231c2e37e9eb04f806dc05199c68f4, type: 3}
+  m_Name: Tank
+  m_EditorClassIdentifier: 
+  role: 2
+  displayName: Tank
+  icon: {fileID: -1781390094, guid: c173592673edd0b40a2a732360051046, type: 3}
+  maxPowerLevel: 10
+  basePowerCost: 140
+  powerCostGrowth: 1.55
+  healthPerLevel: 0.16
+  damagePerLevel: 0.08
+  maxAutoLevel: 6
+  baseAutoCost: 280
+  autoCostGrowth: 1.7
+  startingInterval: 30
+  intervalMultiplier: 0.8
+  minimumInterval: 8
+  previousMonsterAutoLevelRequired: 3
+  maxAlive: 8
+  chargeGoldPerAutoSummon: 0

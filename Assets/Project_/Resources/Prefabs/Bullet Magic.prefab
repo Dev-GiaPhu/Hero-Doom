@@ -12,6 +12,7 @@ GameObject:
   - component: {fileID: 1672859928255121761}
   - component: {fileID: 5110089733908146869}
   - component: {fileID: 8207624158374622003}
+  - component: {fileID: 8167488600370610644}
   m_Layer: 0
   m_Name: Bullet Magic
   m_TagString: Untagged
@@ -105,10 +106,22 @@ SphereCollider:
   m_LayerOverridePriority: 0
   m_IsTrigger: 0
   m_ProvidesContacts: 0
-  m_Enabled: 1
+  m_Enabled: 0
   serializedVersion: 3
   m_Radius: 0.5
   m_Center: {x: 0, y: 0, z: 0}
+--- !u!114 &8167488600370610644
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 2795126595080099095}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: b3714cb57d3c4c0d856d1c0e51116f13, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
 --- !u!1 &4237912982049533962
 GameObject:
   m_ObjectHideFlags: 0

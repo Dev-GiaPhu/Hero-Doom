@@ -1552,6 +1552,9 @@ GameObject:
   - component: {fileID: 4253757099922729242}
   - component: {fileID: 7718946386050970338}
   - component: {fileID: 1376346640894760465}
+  - component: {fileID: 5214857496067426091}
+  - component: {fileID: 625317224649528735}
+  - component: {fileID: 6368231454709210236}
   m_Layer: 0
   m_Name: Knight
   m_TagString: Player
@@ -1583,6 +1586,7 @@ Transform:
   - {fileID: 4311306242685330160}
   - {fileID: 8139512737706277549}
   - {fileID: 5531195105836347955}
+  - {fileID: 5399716708967743185}
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!95 &5612739365710346711
@@ -1652,8 +1656,8 @@ Rigidbody:
     m_Bits: 0
   m_ImplicitCom: 1
   m_ImplicitTensor: 1
-  m_UseGravity: 1
-  m_IsKinematic: 0
+  m_UseGravity: 0
+  m_IsKinematic: 1
   m_Interpolate: 0
   m_Constraints: 112
   m_CollisionDetection: 0
@@ -1680,8 +1684,97 @@ MonoBehaviour:
   armor: 0.05
   basePickupRadius: 1.2
   xpPickupCheckInterval: 0.08
+  xpSeekRadius: 18
+  xpLevelUrgencyWeight: 20
+  damagePopupPrefab: {fileID: 4787979688686804833, guid: 5c45a40dd0ec92249a534a0fb1fca5bc, type: 3}
+  spawnProtection: {fileID: 6368231454709210236}
+  knockbackMotor: {fileID: 625317224649528735}
+  knockbackForce: 7
+  areaKnockbackForce: 9
+  decisionInterval: 0.25
+  minimumActionCommitment: 0.8
+  actionSwitchThreshold: 7
+  currentActionInertia: 10
+  combatWeight: 1
+  experienceWeight: 1
+  objectiveWeight: 0.75
+  targetRecheckInterval: 0.35
+  currentTargetPreference: 2
+  targetSwitchThreshold: 2.5
+  upgradeThoughtPrefab: {fileID: 3287217210318907029, guid: d817d368efde5a34c81d2284ad4ae427, type: 3}
+  upgradeDefinitions:
+  - {fileID: 11400000, guid: 5551bcea661d3eb48b894e9b2c424ce1, type: 2}
+  - {fileID: 11400000, guid: a270e1eba2b9b064086c3bfaf753fc72, type: 2}
+  - {fileID: 11400000, guid: ea77b99bb1559ea4b8bef010e30986da, type: 2}
+  - {fileID: 11400000, guid: ab9dfc2a63db11d4f9a05bdd138d5b58, type: 2}
+  - {fileID: 11400000, guid: e87e454bdd7cb0e409b6bc3205a0fb53, type: 2}
+  - {fileID: 11400000, guid: 221f7015742bffd4a8b11977c9a04675, type: 2}
+  - {fileID: 11400000, guid: 23ea120add22b8e45b72077e4b1afd33, type: 2}
+  - {fileID: 11400000, guid: 0c6730c65ce84384e903d94c5b897552, type: 2}
+  - {fileID: 11400000, guid: 04d2341f241861145881b6d20c4d5468, type: 2}
+  - {fileID: 11400000, guid: 95930e7e0941b104ba8b3a9f507111f1, type: 2}
+  - {fileID: 11400000, guid: 707ad4d5b39f6a4459d9d1d5515f536b, type: 2}
+  - {fileID: 11400000, guid: ccdf107bc3fe5634d9545d745b214490, type: 2}
   corpseHoldTime: 2.5
   shrinkDuration: 1.25
+  currentAction: 0
+  currentActionScore: 0
+--- !u!195 &5214857496067426091
+NavMeshAgent:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 7592019447709997584}
+  m_Enabled: 1
+  m_AgentTypeID: 0
+  m_Radius: 0.48
+  m_Speed: 3.5
+  m_Acceleration: 24
+  avoidancePriority: 30
+  m_AngularSpeed: 720
+  m_StoppingDistance: 0
+  m_AutoTraverseOffMeshLink: 1
+  m_AutoBraking: 1
+  m_AutoRepath: 1
+  m_Height: 2
+  m_BaseOffset: 0
+  m_WalkableMask: 4294967295
+  m_ObstacleAvoidanceType: 4
+--- !u!114 &625317224649528735
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 7592019447709997584}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 96f0019bc53564440bf89883fc3e66c9, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  duration: 0.32
+  resistance: 0
+  maximumSpeed: 16
+--- !u!114 &6368231454709210236
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 7592019447709997584}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 4a91a0acaa2a4714c8c881221b3e7fe2, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  duration: 2.5
+  ringVisual: {fileID: 7140540016060708770}
+  ringRenderer: {fileID: 7873132769869398452}
+  rotationSpeed: 45
+  fadeOutDuration: 0.4
+  introPulseDuration: 0.22
+  introPulseScale: 1.18
 --- !u!1 &7673255511206001353
 GameObject:
   m_ObjectHideFlags: 0
@@ -2092,4 +2185,76 @@ PrefabInstance:
 Transform:
   m_CorrespondingSourceObject: {fileID: -8679921383154817045, guid: be797242c382fb545a566c52989494dd, type: 3}
   m_PrefabInstance: {fileID: 1272371109001146270}
+  m_PrefabAsset: {fileID: 0}
+--- !u!1001 &4018255630919314810
+PrefabInstance:
+  m_ObjectHideFlags: 0
+  serializedVersion: 2
+  m_Modification:
+    serializedVersion: 3
+    m_TransformParent: {fileID: 143479511657368559}
+    m_Modifications:
+    - target: {fileID: 6114759624083774168, guid: e2e51941bfbda3c41868694e7435857d, type: 3}
+      propertyPath: m_Name
+      value: Spawn Protection Ring
+      objectReference: {fileID: 0}
+    - target: {fileID: 9019605628761133995, guid: e2e51941bfbda3c41868694e7435857d, type: 3}
+      propertyPath: m_LocalPosition.x
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 9019605628761133995, guid: e2e51941bfbda3c41868694e7435857d, type: 3}
+      propertyPath: m_LocalPosition.y
+      value: 0.08
+      objectReference: {fileID: 0}
+    - target: {fileID: 9019605628761133995, guid: e2e51941bfbda3c41868694e7435857d, type: 3}
+      propertyPath: m_LocalPosition.z
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 9019605628761133995, guid: e2e51941bfbda3c41868694e7435857d, type: 3}
+      propertyPath: m_LocalRotation.w
+      value: 0.7071068
+      objectReference: {fileID: 0}
+    - target: {fileID: 9019605628761133995, guid: e2e51941bfbda3c41868694e7435857d, type: 3}
+      propertyPath: m_LocalRotation.x
+      value: 0.7071068
+      objectReference: {fileID: 0}
+    - target: {fileID: 9019605628761133995, guid: e2e51941bfbda3c41868694e7435857d, type: 3}
+      propertyPath: m_LocalRotation.y
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 9019605628761133995, guid: e2e51941bfbda3c41868694e7435857d, type: 3}
+      propertyPath: m_LocalRotation.z
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 9019605628761133995, guid: e2e51941bfbda3c41868694e7435857d, type: 3}
+      propertyPath: m_LocalEulerAnglesHint.x
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 9019605628761133995, guid: e2e51941bfbda3c41868694e7435857d, type: 3}
+      propertyPath: m_LocalEulerAnglesHint.y
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 9019605628761133995, guid: e2e51941bfbda3c41868694e7435857d, type: 3}
+      propertyPath: m_LocalEulerAnglesHint.z
+      value: 0
+      objectReference: {fileID: 0}
+    m_RemovedComponents: []
+    m_RemovedGameObjects: []
+    m_AddedGameObjects: []
+    m_AddedComponents: []
+  m_SourcePrefab: {fileID: 100100000, guid: e2e51941bfbda3c41868694e7435857d, type: 3}
+--- !u!4 &5399716708967743185 stripped
+Transform:
+  m_CorrespondingSourceObject: {fileID: 9019605628761133995, guid: e2e51941bfbda3c41868694e7435857d, type: 3}
+  m_PrefabInstance: {fileID: 4018255630919314810}
+  m_PrefabAsset: {fileID: 0}
+--- !u!1 &7140540016060708770 stripped
+GameObject:
+  m_CorrespondingSourceObject: {fileID: 6114759624083774168, guid: e2e51941bfbda3c41868694e7435857d, type: 3}
+  m_PrefabInstance: {fileID: 4018255630919314810}
+  m_PrefabAsset: {fileID: 0}
+--- !u!23 &7873132769869398452 stripped
+MeshRenderer:
+  m_CorrespondingSourceObject: {fileID: 6521575917597568206, guid: e2e51941bfbda3c41868694e7435857d, type: 3}
+  m_PrefabInstance: {fileID: 4018255630919314810}
   m_PrefabAsset: {fileID: 0}
