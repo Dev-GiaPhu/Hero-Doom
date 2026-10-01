@@ -63,6 +63,7 @@ public static class HeroDoomCombatAuthoring
         GameObject ringPrefab = CreateRing(ring);
         HeroUpgradeDefinition[] heroDefs = CreateHeroDefinitions();
         HeroUpgradeThought thought = CreateThought(heroDefs);
+        CreateHeroProgressionHUD(heroDefs);
         var hud = Object.FindFirstObjectByType<MonsterHUDController>();
         SummonerUpgrades upgrades = manager.GetComponent<SummonerUpgrades>();
         if (upgrades == null) upgrades = Undo.AddComponent<SummonerUpgrades>(manager.gameObject);
@@ -458,6 +459,187 @@ public static class HeroDoomCombatAuthoring
         Object.DestroyImmediate(go); return prefab.GetComponent<HeroUpgradeThought>();
     }
 
+    private static void CreateHeroProgressionHUD(HeroUpgradeDefinition[] heroDefs)
+    {
+        HeroHUDController hud = Object.FindFirstObjectByType<HeroHUDController>();
+        if (hud == null)
+            throw new Exception("Missing HeroHUDController in SampleScene.");
+
+        if (hud.healthSlider == null)
+            throw new Exception("HeroHUDController.healthSlider is not assigned.");
+
+        RectTransform healthRect = hud.healthSlider.transform as RectTransform;
+        RectTransform parent = healthRect != null ? healthRect.parent as RectTransform : null;
+        if (healthRect == null || parent == null)
+            throw new Exception("Hero health slider must be inside a RectTransform.");
+
+        Transform existing = parent.Find("Hero Progression HUD");
+        if (existing != null)
+            Undo.DestroyObjectImmediate(existing.gameObject);
+
+        GameObject rootGo = new GameObject("Hero Progression HUD", typeof(RectTransform));
+        Undo.RegisterCreatedObjectUndo(rootGo, "Create Hero Progression HUD");
+
+        RectTransform root = rootGo.GetComponent<RectTransform>();
+        root.SetParent(parent, false);
+        root.anchorMin = healthRect.anchorMin;
+        root.anchorMax = healthRect.anchorMax;
+        root.pivot = healthRect.pivot;
+        root.sizeDelta = new Vector2(Mathf.Max(240f, healthRect.rect.width), 86f);
+        root.anchoredPosition =
+            healthRect.anchoredPosition +
+            new Vector2(0f, -Mathf.Max(20f, healthRect.rect.height) - 8f);
+
+        GameObject expBgGo = new GameObject("Experience Bar", typeof(RectTransform), typeof(Image));
+        RectTransform expBgRect = expBgGo.GetComponent<RectTransform>();
+        expBgRect.SetParent(root, false);
+        expBgRect.anchorMin = new Vector2(0f, 1f);
+        expBgRect.anchorMax = new Vector2(1f, 1f);
+        expBgRect.pivot = new Vector2(0.5f, 1f);
+        expBgRect.offsetMin = new Vector2(0f, -20f);
+        expBgRect.offsetMax = new Vector2(0f, -4f);
+
+        Image expBg = expBgGo.GetComponent<Image>();
+        expBg.color = new Color(0.035f, 0.055f, 0.075f, 0.92f);
+        expBg.raycastTarget = false;
+
+        GameObject expFillGo = new GameObject("Fill", typeof(RectTransform), typeof(Image));
+        RectTransform expFillRect = expFillGo.GetComponent<RectTransform>();
+        expFillRect.SetParent(expBgRect, false);
+        expFillRect.anchorMin = Vector2.zero;
+        expFillRect.anchorMax = Vector2.one;
+        expFillRect.offsetMin = new Vector2(2f, 2f);
+        expFillRect.offsetMax = new Vector2(-2f, -2f);
+
+        Image expFill = expFillGo.GetComponent<Image>();
+        expFill.color = new Color(0.28f, 0.72f, 1f, 1f);
+        expFill.sprite = AssetDatabase.GetBuiltinExtraResource<Sprite>("UI/Skin/UISprite.psd");
+        expFill.type = UnityEngine.UI.Image.Type.Filled;
+        expFill.fillMethod = UnityEngine.UI.Image.FillMethod.Horizontal;
+        expFill.fillOrigin = 0;
+        expFill.fillAmount = 0f;
+        expFill.raycastTarget = false;
+
+        GameObject expTextGo = new GameObject("Experience Text", typeof(RectTransform), typeof(TextMeshProUGUI));
+        RectTransform expTextRect = expTextGo.GetComponent<RectTransform>();
+        expTextRect.SetParent(expBgRect, false);
+        expTextRect.anchorMin = Vector2.zero;
+        expTextRect.anchorMax = Vector2.one;
+        expTextRect.offsetMin = Vector2.zero;
+        expTextRect.offsetMax = Vector2.zero;
+
+        TMP_Text expText = expTextGo.GetComponent<TextMeshProUGUI>();
+        expText.font = TMP_Settings.defaultFontAsset;
+        expText.text = "EXP  0 / 10";
+        expText.fontSize = 12f;
+        expText.fontStyle = FontStyles.Bold;
+        expText.alignment = TextAlignmentOptions.Center;
+        expText.color = Color.white;
+        expText.raycastTarget = false;
+        expText.textWrappingMode = TextWrappingModes.NoWrap;
+
+        GameObject rowGo = new GameObject(
+            "Upgrade Icons",
+            typeof(RectTransform),
+            typeof(HorizontalLayoutGroup));
+
+        RectTransform row = rowGo.GetComponent<RectTransform>();
+        row.SetParent(root, false);
+        row.anchorMin = new Vector2(0f, 1f);
+        row.anchorMax = new Vector2(1f, 1f);
+        row.pivot = new Vector2(0.5f, 1f);
+        row.offsetMin = new Vector2(0f, -82f);
+        row.offsetMax = new Vector2(0f, -28f);
+
+        HorizontalLayoutGroup layout = rowGo.GetComponent<HorizontalLayoutGroup>();
+        layout.spacing = 5f;
+        layout.childAlignment = TextAnchor.MiddleLeft;
+        layout.childControlWidth = false;
+        layout.childControlHeight = false;
+        layout.childForceExpandWidth = false;
+        layout.childForceExpandHeight = false;
+        layout.padding = new RectOffset(0, 0, 2, 2);
+
+        hud.upgradeSlots = new GameObject[12];
+        hud.upgradeIcons = new Image[12];
+        hud.upgradeCounts = new TMP_Text[12];
+
+        const float iconSize = 34f;
+
+        for (int i = 0; i < 12; i++)
+        {
+            HeroUpgradeDefinition definition =
+                heroDefs != null && i < heroDefs.Length ? heroDefs[i] : null;
+
+            string slotName = definition != null
+                ? definition.displayName + " Upgrade"
+                : ((HeroUpgradeType)i) + " Upgrade";
+
+            GameObject slotGo = new GameObject(
+                slotName,
+                typeof(RectTransform),
+                typeof(Image),
+                typeof(LayoutElement));
+
+            RectTransform slotRect = slotGo.GetComponent<RectTransform>();
+            slotRect.SetParent(row, false);
+            slotRect.sizeDelta = new Vector2(iconSize, iconSize);
+
+            LayoutElement element = slotGo.GetComponent<LayoutElement>();
+            element.preferredWidth = iconSize;
+            element.preferredHeight = iconSize;
+            element.minWidth = iconSize;
+            element.minHeight = iconSize;
+
+            Image background = slotGo.GetComponent<Image>();
+            background.color = new Color(0.04f, 0.07f, 0.08f, 0.92f);
+            background.raycastTarget = false;
+
+            GameObject iconGo = new GameObject("Icon", typeof(RectTransform), typeof(Image));
+            RectTransform iconRect = iconGo.GetComponent<RectTransform>();
+            iconRect.SetParent(slotRect, false);
+            iconRect.anchorMin = new Vector2(0.12f, 0.12f);
+            iconRect.anchorMax = new Vector2(0.88f, 0.88f);
+            iconRect.offsetMin = Vector2.zero;
+            iconRect.offsetMax = Vector2.zero;
+
+            Image icon = iconGo.GetComponent<Image>();
+            icon.sprite = definition != null ? definition.icon : null;
+            icon.preserveAspect = true;
+            icon.raycastTarget = false;
+
+            GameObject countGo = new GameObject("Count", typeof(RectTransform), typeof(TextMeshProUGUI));
+            RectTransform countRect = countGo.GetComponent<RectTransform>();
+            countRect.SetParent(slotRect, false);
+            countRect.anchorMin = new Vector2(0.35f, 0f);
+            countRect.anchorMax = new Vector2(1f, 0.5f);
+            countRect.offsetMin = Vector2.zero;
+            countRect.offsetMax = new Vector2(-2f, 2f);
+
+            TMP_Text count = countGo.GetComponent<TextMeshProUGUI>();
+            count.font = TMP_Settings.defaultFontAsset;
+            count.text = "x1";
+            count.fontSize = 11f;
+            count.fontStyle = FontStyles.Bold;
+            count.alignment = TextAlignmentOptions.BottomRight;
+            count.color = Color.white;
+            count.raycastTarget = false;
+            count.textWrappingMode = TextWrappingModes.NoWrap;
+
+            slotGo.SetActive(false);
+
+            hud.upgradeSlots[i] = slotGo;
+            hud.upgradeIcons[i] = icon;
+            hud.upgradeCounts[i] = count;
+        }
+
+        hud.progressionRoot = root;
+        hud.experienceFill = expFill;
+        hud.experienceText = expText;
+
+        EditorUtility.SetDirty(hud);
+    }
+
     private static RectTransform Rect(string name, Transform parent, float left, float top, float right, float height)
     {
         var go = new GameObject(name, typeof(RectTransform)); go.layer = 5;
@@ -577,6 +759,18 @@ public static class HeroDoomCombatAuthoring
             if (i == 1 && (m.mageProjectilePrefab == null || m.mageProjectilePrefab.GetComponent<MagicProjectile>() == null || m.lightningPrefab == null)) throw new Exception("Mage effects missing.");
             report += m.name + ": feedback, protection, navigation OK\n";
         }
+        HeroHUDController heroHud = Object.FindFirstObjectByType<HeroHUDController>();
+        if (heroHud == null ||
+            heroHud.progressionRoot == null ||
+            heroHud.experienceFill == null ||
+            heroHud.experienceText == null ||
+            heroHud.upgradeSlots == null ||
+            heroHud.upgradeSlots.Length != 12 ||
+            heroHud.upgradeSlots.Any(slot => slot == null))
+            throw new Exception("Hero progression HUD is not authored or wired.");
+
+        report += "Hero EXP bar and 12 upgrade HUD slots OK\n";
+
         var cards = Object.FindObjectsByType<MonsterUpgradeCard>(FindObjectsInactive.Include, FindObjectsSortMode.None);
         if (cards.Length != 4 || cards.Any(c => c.upgrades == null || c.powerButton == null || c.autoButton == null)) throw new Exception("Expected four authored cards with bindings.");
 
