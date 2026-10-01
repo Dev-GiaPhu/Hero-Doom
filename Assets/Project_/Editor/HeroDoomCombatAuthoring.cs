@@ -160,12 +160,18 @@ public static class HeroDoomCombatAuthoring
     {
         SpawnProtection protection = root.GetComponent<SpawnProtection>() ?? root.AddComponent<SpawnProtection>();
         protection.duration = duration;
-        if (protection.ringVisual == null)
-        {
-            GameObject ring = (GameObject)PrefabUtility.InstantiatePrefab(ringPrefab, root.transform);
-            ring.name = "Spawn Protection Ring";
-            protection.ringVisual = ring; protection.ringRenderer = ring.GetComponent<Renderer>();
-        }
+
+        if (protection.ringVisual != null)
+            Object.DestroyImmediate(protection.ringVisual);
+
+        GameObject ring = (GameObject)PrefabUtility.InstantiatePrefab(ringPrefab, root.transform);
+        ring.name = "Spawn Protection Ring";
+        protection.ringVisual = ring;
+        protection.ringRenderer = ring.GetComponent<Renderer>();
+        protection.introPulseDuration = 0.28f;
+        protection.introPulseScale = 1.25f;
+        protection.fadeOutDuration = 0.5f;
+
         EditorUtility.SetDirty(protection);
         return protection;
     }
@@ -328,7 +334,20 @@ public static class HeroDoomCombatAuthoring
         if (shader == null || ShaderUtil.ShaderHasError(shader)) throw new Exception("Protection Shader Graph failed to import.");
         string path = Root + "/Materials/Combat/Spawn Protection.mat";
         Material mat = AssetDatabase.LoadAssetAtPath<Material>(path);
-        if (mat == null) { mat = new Material(shader); AssetDatabase.CreateAsset(mat, path); }
+        if (mat == null)
+        {
+            mat = new Material(shader);
+            AssetDatabase.CreateAsset(mat, path);
+        }
+
+        mat.shader = shader;
+        if (mat.HasProperty("_Color")) mat.SetColor("_Color", new Color(0.15f, 0.95f, 1f, 1f));
+        if (mat.HasProperty("_Intensity")) mat.SetFloat("_Intensity", 5f);
+        if (mat.HasProperty("_Radius")) mat.SetFloat("_Radius", 0.38f);
+        if (mat.HasProperty("_Thickness")) mat.SetFloat("_Thickness", 0.055f);
+        if (mat.HasProperty("_Softness")) mat.SetFloat("_Softness", 0.025f);
+        if (mat.HasProperty("_Opacity")) mat.SetFloat("_Opacity", 1f);
+        EditorUtility.SetDirty(mat);
         return mat;
     }
 
@@ -336,9 +355,9 @@ public static class HeroDoomCombatAuthoring
     {
         GameObject go = GameObject.CreatePrimitive(PrimitiveType.Quad); go.name = "Spawn Protection Ring";
         Object.DestroyImmediate(go.GetComponent<Collider>());
-        go.transform.localPosition = new Vector3(0, 0.08f, 0);
+        go.transform.localPosition = new Vector3(0, 0.14f, 0);
         go.transform.localRotation = Quaternion.Euler(90, 0, 0);
-        go.transform.localScale = Vector3.one * 2.4f;
+        go.transform.localScale = Vector3.one * 3.4f;
         Renderer renderer = go.GetComponent<Renderer>(); renderer.sharedMaterial = mat;
         renderer.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off; renderer.receiveShadows = false;
         GameObject prefab = PrefabUtility.SaveAsPrefabAsset(go, Root + "/Prefabs/Combat/Spawn Protection Ring.prefab");
@@ -426,7 +445,8 @@ public static class HeroDoomCombatAuthoring
         GameObject go = new GameObject("Hero Upgrade Thought", typeof(HeroUpgradeThought));
         var thought = go.GetComponent<HeroUpgradeThought>();
         var icon = new GameObject("Chosen upgrade icon", typeof(SpriteRenderer)); icon.transform.SetParent(go.transform, false);
-        thought.upgradeIcon = icon.GetComponent<SpriteRenderer>(); thought.upgradeIcon.sprite = defs[0].icon; thought.upgradeIcon.sortingOrder = 110;
+        thought.upgradeIcon = icon.GetComponent<SpriteRenderer>(); thought.upgradeIcon.sprite = defs[0].icon; thought.upgradeIcon.sortingOrder = 140;
+        thought.iconScale = 1.9f; thought.resultDuration = 3f; thought.worldOffset = new Vector3(0, 3.5f, 0);
         thought.thinkingIcon = PixelIcon("Thinking", "00111100/01000010/00000010/00001100/00011000/00000000/00011000/00000000");
         var caption = new GameObject("Chosen upgrade name", typeof(TextMeshPro)); caption.transform.SetParent(go.transform, false);
         caption.transform.localPosition = new Vector3(0, -0.55f, 0); caption.transform.localScale = Vector3.one * 0.22f;
