@@ -76,10 +76,11 @@ public class MonsterAI : MonoBehaviour
     private Vector3 retreatDestination;
     private float nextPathUpdate;
     private Vector3 lastDestination;
-    private readonly NavMeshPath retreatPath = new NavMeshPath();
+    private NavMeshPath retreatPath;
 
     void Awake()
     {
+        retreatPath = new NavMeshPath();
         EnsureRuntimeComponents();
         currentHP = maxHP;
     }
@@ -291,6 +292,7 @@ public class MonsterAI : MonoBehaviour
             if (!NavMesh.SamplePosition(candidate, out NavMeshHit hit, 0.8f, agent.areaMask)) continue;
             if (GuardPillar != null && !GuardPillar.IsInside(hit.position, 0)) continue;
             if (FlatDistance(transform.position, hit.position) < 0.6f) continue;
+            if (retreatPath == null) retreatPath = new NavMeshPath();
             if (!agent.CalculatePath(hit.position, retreatPath) || retreatPath.status != NavMeshPathStatus.PathComplete) continue;
             float score = FlatDistance(hit.position, heroTarget.transform.position);
             foreach (MonsterAI ally in ActiveMonsters)
