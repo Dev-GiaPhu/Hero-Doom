@@ -15,6 +15,7 @@ public class CombatKnockback : MonoBehaviour
     public bool IsActive => remaining > 0f;
 
     private NavMeshAgent agent;
+    private InfiniteMapGenerator map;
     private Vector3 velocity;
     private float remaining;
     private bool previousUpdatePosition;
@@ -23,6 +24,7 @@ public class CombatKnockback : MonoBehaviour
     void Awake()
     {
         agent = GetComponent<NavMeshAgent>();
+        map = FindFirstObjectByType<InfiniteMapGenerator>();
     }
 
     public void Push(Vector3 impulse)
@@ -63,6 +65,26 @@ public class CombatKnockback : MonoBehaviour
             // Deliberately move the transform itself. This lets the unit cross a NavMesh shoreline
             // and enter a WaterHazard trigger instead of treating the shore as a wall.
             transform.position += displacement;
+
+            if (map == null) map = FindFirstObjectByType<InfiniteMapGenerator>();
+            if (map != null && map.IsWaterAtWorldPosition(transform.position))
+            {
+                HeroBotAI hero = GetComponent<HeroBotAI>();
+                if (hero != null && hero.IsAlive)
+                {
+                    remaining = 0f;
+                    hero.KillByEnvironment();
+                    return;
+                }
+
+                MonsterAI monster = GetComponent<MonsterAI>();
+                if (monster != null && monster.IsAlive)
+                {
+                    remaining = 0f;
+                    monster.KillByEnvironment();
+                    return;
+                }
+            }
 
             if (agent != null && agent.enabled && agent.isOnNavMesh)
                 agent.nextPosition = transform.position;
