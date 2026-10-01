@@ -571,7 +571,11 @@ public class HeroBotAI : MonoBehaviour
         else
         {
             Trigger(heavyHit ? "HitHeavy" : "HitLight");
-            if (knockback.sqrMagnitude > 0.01f) knockbackMotor?.Push(knockback);
+
+            // Normal monster hits should not continuously shove the Hero around.
+            // Heavy attacks still apply explicit knockback and can throw the Hero into water.
+            if (heavyHit && knockback.sqrMagnitude > 0.01f)
+                knockbackMotor?.Push(knockback);
         }
 
         return actual;
