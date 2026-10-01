@@ -13,14 +13,14 @@ public class MonsterUpgradeDefinition : ScriptableObject
     [Min(0)] public float healthPerLevel = 0.15f;
     [Min(0)] public float damagePerLevel = 0.12f;
     [Header("Automatic summoning")]
-    [Min(1)] public int maxAutoLevel = 10;
+    [Min(1)] public int maxAutoLevel = 6;
     [Min(1)] public float baseAutoCost = 100;
     [Min(1)] public float autoCostGrowth = 1.7f;
     [Min(1)] public float startingInterval = 18;
     [Range(0.1f, 1)] public float intervalMultiplier = 0.85f;
     [Min(1)] public float minimumInterval = 4;
     [Min(0)] public int previousMonsterAutoLevelRequired = 3;
-    [Min(1)] public int maxAlive = 20;
+    [Min(1)] public int maxAlive = 18;
     [Tooltip("Off: purchasing automation pays for timed summons. On: every summon also costs gold.")]
     public bool chargeGoldPerAutoSummon;
     public double PowerCost(int level) => basePowerCost * System.Math.Pow(powerCostGrowth, level);
