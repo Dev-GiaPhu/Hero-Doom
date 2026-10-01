@@ -10,6 +10,8 @@ public class HeroDoomGameManager : MonoBehaviour
     public float heroHPPerDeath = 75f;
     public float respawnDelay = 5f;
     public float respawnSearchRadius = 10f;
+    [Min(0f)] public float respawnMinimumDistance = 4f;
+    [Range(4, 64)] public int respawnRandomAttempts = 24;
 
     [Header("Economy")]
     public double startingGold = 50d;
@@ -100,7 +102,8 @@ public class HeroDoomGameManager : MonoBehaviour
 
         Vector3 spawn = near;
 
-        if (map != null &&
+        if (!TryGetRandomRespawnPoint(near, out spawn) &&
+            map != null &&
             !map.TryGetSafeGround(near, respawnSearchRadius, out spawn))
         {
             map.TryGetSafeGround(
@@ -123,6 +126,37 @@ public class HeroDoomGameManager : MonoBehaviour
         }
 
         RegisterHero(ai);
+    }
+
+    private bool TryGetRandomRespawnPoint(Vector3 near, out Vector3 spawn)
+    {
+        spawn = near;
+        if (map == null) return false;
+
+        float minRadius = Mathf.Clamp(respawnMinimumDistance, 0f, respawnSearchRadius);
+        float maxRadius = Mathf.Max(minRadius + 0.5f, respawnSearchRadius);
+
+        for (int i = 0; i < Mathf.Max(4, respawnRandomAttempts); i++)
+        {
+            Vector2 dir = Random.insideUnitCircle;
+            if (dir.sqrMagnitude < 0.01f) dir = Vector2.right;
+            dir.Normalize();
+
+            float distance = Random.Range(minRadius, maxRadius);
+            Vector3 candidate = near + new Vector3(dir.x, 0f, dir.y) * distance;
+
+            if (!map.IsInsideWorld(candidate) || map.IsWaterAtWorldPosition(candidate))
+                continue;
+
+            if (map.TryGetSafeGround(candidate, 2.5f, out Vector3 safe) &&
+                Vector3.Distance(new Vector3(safe.x, 0f, safe.z), new Vector3(near.x, 0f, near.z)) >= minRadius * 0.75f)
+            {
+                spawn = safe;
+                return true;
+            }
+        }
+
+        return false;
     }
 
     public bool CanAfford(double amount)
