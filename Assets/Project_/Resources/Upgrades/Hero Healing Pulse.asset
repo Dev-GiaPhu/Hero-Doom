@@ -1,0 +1,27 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 3afbb2f0c5671c24e90aced1fd4fb06e, type: 3}
+  m_Name: Hero Healing Pulse
+  m_EditorClassIdentifier: 
+  type: 12
+  displayName: Healing Pulse
+  icon: {fileID: 21300000, guid: 38859361fb2a0914291b0943318d9b10, type: 3}
+  description: Periodically restore a portion of maximum health when wounded.
+  utility:
+    survivalNeed: 1.35
+    closeThreat: 0.05
+    enemyCrowding: 0.05
+    rangedThreat: 0.05
+    weakenedEnemies: 0
+    experienceUrgency: 0
+    objectivePressure: 0
+    offensiveSynergy: 0.15

@@ -22,8 +22,10 @@ public class MonsterHUDController : MonoBehaviour
 
     [Header("Selected Visual")]
     [Range(1f, 1.25f)] public float selectedScale = 1.06f;
+    public Color lockedColor = new Color(.38f,.38f,.42f,.72f);
 
     private UnityAction[] clickActions;
+    private float refreshTimer;
 
     void Awake()
     {
@@ -67,6 +69,15 @@ public class MonsterHUDController : MonoBehaviour
             playerSpawner.SelectedMonsterChanged -= Refresh;
     }
 
+    void Update()
+    {
+        refreshTimer -= Time.unscaledDeltaTime;
+        if (refreshTimer > 0f) return;
+        refreshTimer = .25f;
+        if (playerSpawner == null) playerSpawner = FindFirstObjectByType<PlayerSpawner>();
+        if (playerSpawner != null) Refresh(playerSpawner.SelectedMonsterIndex);
+    }
+
     void OnDestroy()
     {
         if (clickActions == null) return;
@@ -98,6 +109,7 @@ public class MonsterHUDController : MonoBehaviour
             if (slot == null) continue;
 
             bool selected = i == selectedIndex;
+            bool unlocked = playerSpawner == null || playerSpawner.upgrades == null || playerSpawner.upgrades.IsMonsterUnlocked(i);
 
             if (slot.image != null)
             {
@@ -107,12 +119,14 @@ public class MonsterHUDController : MonoBehaviour
 
                 if (sprite != null)
                     slot.image.sprite = sprite;
+                slot.image.color = unlocked ? Color.white : lockedColor;
             }
 
             if (slot.button != null)
             {
                 slot.button.transform.localScale =
                     Vector3.one * (selected ? selectedScale : 1f);
+                slot.button.interactable = unlocked;
             }
         }
     }

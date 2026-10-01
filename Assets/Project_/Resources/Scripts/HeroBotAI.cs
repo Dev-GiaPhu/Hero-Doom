@@ -16,7 +16,11 @@ public enum HeroUpgradeType
     LifeSteal,
     MultiStrike,
     Shockwave,
-    Execution
+    Execution,
+    HealingPulse,
+    ArcaneNova,
+    InfernoField,
+    OrbitingSaws
 }
 
 public enum HeroUtilityAction
@@ -79,8 +83,23 @@ public class HeroBotAI : MonoBehaviour
 
     [Header("Level Up - AI chooses one of two")]
     public HeroUpgradeThought upgradeThoughtPrefab;
-    public HeroUpgradeDefinition[] upgradeDefinitions = new HeroUpgradeDefinition[12];
+    public HeroUpgradeDefinition[] upgradeDefinitions = new HeroUpgradeDefinition[16];
+    [Header("Survival skill VFX - authored prefabs")]
+    public HeroSkillBurst attackImpactVisualPrefab;
+    public HeroSkillBurst healingPulseVisualPrefab;
+    public HeroSkillBurst arcaneNovaVisualPrefab;
+    public HeroFireField fireFieldPrefab;
+    public HeroOrbitingSaw orbitingSawPrefab;
+    public HeroSkillBurst lightningStrikeVisualPrefab;
     private HeroUpgradeThought currentThought;
+    private readonly Queue<HeroUpgradeOffer> pendingUpgradeOffers = new();
+    private Coroutine upgradeDecisionRoutine;
+
+    private struct HeroUpgradeOffer
+    {
+        public HeroUpgradeDefinition first;
+        public HeroUpgradeDefinition second;
+    }
 
     [Header("Death")]
     public float corpseHoldTime = 2.5f;
@@ -106,7 +125,9 @@ public class HeroBotAI : MonoBehaviour
         return System.Array.Find(upgradeDefinitions, d => d != null && d.type == type);
     }
 
-    private readonly int[] upgradeStacks = new int[12];
+    private readonly int[] upgradeStacks = new int[16];
+    private readonly List<HeroOrbitingSaw> orbitingSaws = new();
+    private float nextInfernoField;
     private readonly List<ExperienceOrb> xpCollectBuffer = new(16);
     private MonsterAI targetMonster;
     private ExperienceOrb targetExperience;
@@ -122,6 +143,8 @@ public class HeroBotAI : MonoBehaviour
     private float xpPickupTimer;
     private float targetRecheckTimer;
     private int attackCounter;
+    private float nextHealingPulse;
+    private float nextArcaneNova;
 
     void Awake()
     {
@@ -152,6 +175,7 @@ public class HeroBotAI : MonoBehaviour
 
         attackTimer -= Time.deltaTime;
         xpPickupTimer -= Time.deltaTime;
+        TickSurvivalSkills();
 
         if (xpPickupTimer <= 0f)
         {
@@ -511,7 +535,10 @@ public class HeroBotAI : MonoBehaviour
         Trigger("Attack");
         attackCounter++;
 
-        float damage = attackDamage * (1f + 0.10f * upgradeStacks[(int)HeroUpgradeType.Damage]);
+        CapturePillarManager pillars = CapturePillarManager.Instance;
+        float factionDamage = pillars != null ? pillars.HeroDamageMultiplier : 1f;
+        float levelPower = 1f + Mathf.Min(24, Mathf.Max(0, Level - 1)) * 0.055f;
+        float damage = attackDamage * levelPower * factionDamage * (1f + 0.10f * upgradeStacks[(int)HeroUpgradeType.Damage]);
         if (upgradeStacks[(int)HeroUpgradeType.Execution] > 0 && targetMonster.HPPercent < 0.25f)
             damage *= 1f + 0.10f * upgradeStacks[(int)HeroUpgradeType.Execution];
 
@@ -546,6 +573,76 @@ public class HeroBotAI : MonoBehaviour
             DamageNearby(null, damage * 0.28f, 3.5f, 8);
     }
 
+    private void TickSurvivalSkills()
+    {
+        TickInfernoField();
+        EnsureOrbitingSaws();
+        int healing = upgradeStacks[(int)HeroUpgradeType.HealingPulse];
+        if (healing > 0 && Time.time >= nextHealingPulse && currentHP < maxHP)
+        {
+            nextHealingPulse = Time.time + Mathf.Max(3.5f, 10f - healing * 0.75f);
+            float amount = Mathf.Min(maxHP - currentHP, maxHP * (0.08f + healing * 0.025f));
+            currentHP += amount;
+            DamagePopup.Spawn(damagePopupPrefab, transform.position + Vector3.up * 2.1f, amount, DamagePopupKind.Healing);
+            HeroSkillBurst.Spawn(healingPulseVisualPrefab, transform.position + Vector3.up * 0.12f);
+        }
+
+        int nova = upgradeStacks[(int)HeroUpgradeType.ArcaneNova];
+        if (nova > 0 && Time.time >= nextArcaneNova)
+        {
+            nextArcaneNova = Time.time + Mathf.Max(4f, 9f - nova * 0.65f);
+            Trigger("Attack");
+            HeroSkillBurst.Spawn(arcaneNovaVisualPrefab, transform.position + Vector3.up * 0.12f);
+            DamageNearby(null, SkillDamage * (1.2f + nova * 0.3f), 7.5f + nova * 0.55f, 24);
+        }
+    }
+
+    public float SkillDamage => attackDamage * (1f + Mathf.Min(24, Mathf.Max(0, Level - 1)) * 0.055f) *
+                                (1f + .1f * upgradeStacks[(int)HeroUpgradeType.Damage]);
+
+    private void TickInfernoField()
+    {
+        int rank = upgradeStacks[(int)HeroUpgradeType.InfernoField];
+        if (rank <= 0 || fireFieldPrefab == null || Time.time < nextInfernoField) return;
+        nextInfernoField = Time.time + Mathf.Max(4.5f, 9f - rank * .65f);
+        MonsterAI target = PickBestMonsterTarget();
+        if (target == null) return;
+        Vector3 ground = target.transform.position;
+        ground.y = transform.position.y;
+        // A broad strike clears clustered enemies, then leaves a persistent burn zone.
+        int strikeLimit = Mathf.Min(4, 1 + rank);
+        int struck = 0;
+        foreach (MonsterAI monster in MonsterAI.ActiveMonsters)
+        {
+            if (monster == null || !monster.IsAlive ||
+                Vector3.Distance(monster.transform.position, target.transform.position) > 4.5f) continue;
+            Vector3 strikePoint = monster.transform.position;
+            strikePoint.y = transform.position.y + 0.12f;
+            HeroSkillBurst.Spawn(lightningStrikeVisualPrefab, strikePoint);
+            monster.TakeDamage(SkillDamage * (0.28f + 0.06f * rank), this);
+            if (++struck >= strikeLimit) break;
+        }
+        if (struck == 0) HeroSkillBurst.Spawn(lightningStrikeVisualPrefab, ground + Vector3.up * 0.12f);
+        HeroFireField field = Instantiate(fireFieldPrefab, ground, Quaternion.identity);
+        field.Activate(this, rank);
+    }
+
+    private void EnsureOrbitingSaws()
+    {
+        int rank = upgradeStacks[(int)HeroUpgradeType.OrbitingSaws];
+        if (rank <= 0 || orbitingSawPrefab == null) return;
+        orbitingSaws.RemoveAll(saw => saw == null);
+        int wanted = Mathf.Min(5, 1 + rank);
+        while (orbitingSaws.Count < wanted)
+        {
+            HeroOrbitingSaw saw = Instantiate(orbitingSawPrefab, transform.position, Quaternion.identity);
+            saw.Initialize(this, orbitingSaws.Count, wanted);
+            orbitingSaws.Add(saw);
+        }
+        foreach (HeroOrbitingSaw saw in orbitingSaws)
+            if (saw != null) saw.SetBladeCount(wanted);
+    }
+
     private void DamageNearby(MonsterAI excluded, float damage, float radius, int maxTargets)
     {
         int hit = 0;
@@ -565,8 +662,12 @@ public class HeroBotAI : MonoBehaviour
         if (!IsAlive || amount <= 0f || (spawnProtection != null && spawnProtection.IsProtected)) return 0f;
 
         float effectiveArmor = Mathf.Clamp01(armor + 0.04f * upgradeStacks[(int)HeroUpgradeType.Armor]);
-        float actual = Mathf.Min(currentHP, amount * (1f - effectiveArmor));
+        CapturePillarManager pillars = CapturePillarManager.Instance;
+        float pillarProtection = pillars != null ? Mathf.Max(1f, pillars.HeroHealthMultiplier) : 1f;
+        float actual = Mathf.Min(currentHP, amount * (1f - effectiveArmor) / pillarProtection);
         currentHP -= actual;
+        if (actual > 0f)
+            HeroSkillBurst.Spawn(attackImpactVisualPrefab, transform.position + Vector3.up * 0.95f);
 
         DamagePopup.Spawn(
             damagePopupPrefab,
@@ -608,88 +709,150 @@ public class HeroBotAI : MonoBehaviour
         {
             Experience -= ExperienceToNext;
             Level++;
-            ChooseUpgradeAutomatically();
+            // Level growth keeps the Hero competitive through the middle of a long run.
+            maxHP *= 1.055f;
+            currentHP = Mathf.Min(maxHP, currentHP + maxHP * .04f);
+            QueueUpgradeDecision();
         }
+        HeroDoomGameManager.Instance?.SaveHeroProgression(this);
     }
 
-    private void ChooseUpgradeAutomatically()
+    public void CopyProgressionTo(int[] stacks, out int level, out float experience)
     {
-        List<HeroUpgradeType> candidates = new();
-        for (int i = 0; i < upgradeStacks.Length; i++)
-            if (upgradeStacks[i] < 5) candidates.Add((HeroUpgradeType)i);
-        if (candidates.Count == 0) return;
-
-        List<HeroUpgradeType> offered = new();
-        while (offered.Count < Mathf.Min(2, candidates.Count))
-        {
-            HeroUpgradeType pick = candidates[Random.Range(0, candidates.Count)];
-            if (!offered.Contains(pick)) offered.Add(pick);
-        }
-
-        HeroUpgradeType best = offered[0];
-        float bestScore = float.MinValue;
-        foreach (HeroUpgradeType option in offered)
-        {
-            float score = UpgradeUtility(option);
-
-            // Small noise keeps the Hero from producing the exact same build every run
-            // while still strongly preferring upgrades that answer the current battlefield.
-            score += Random.Range(-0.35f, 0.35f);
-
-            if (score > bestScore) { bestScore = score; best = option; }
-        }
-        ApplyUpgrade(best);
-        HeroUpgradeDefinition definition = System.Array.Find(upgradeDefinitions, d => d != null && d.type == best);
-        if (upgradeThoughtPrefab != null && definition != null)
-        {
-            if (currentThought != null) Destroy(currentThought.gameObject);
-            currentThought = Instantiate(upgradeThoughtPrefab, transform.position + Vector3.up * 3.1f, Quaternion.identity);
-            currentThought.Show(transform, definition, upgradeStacks[(int)best]);
-        }
+        level = Level;
+        experience = Experience;
+        if (stacks == null) return;
+        for (int i = 0; i < Mathf.Min(stacks.Length, upgradeStacks.Length); i++) stacks[i] = upgradeStacks[i];
     }
 
-    private float UpgradeUtility(HeroUpgradeType type)
+    public void RestoreProgression(int level, float experience, int[] stacks)
+    {
+        Level = Mathf.Max(1, level);
+        Experience = Mathf.Max(0f, experience);
+        if (stacks != null)
+            for (int i = 0; i < Mathf.Min(stacks.Length, upgradeStacks.Length); i++) upgradeStacks[i] = Mathf.Clamp(stacks[i], 0, 5);
+        maxHP = Mathf.Max(1f, maxHP) * Mathf.Pow(1.055f, Mathf.Max(0, Level - 1)) *
+                Mathf.Pow(1.12f, upgradeStacks[(int)HeroUpgradeType.MaxHealth]);
+        currentHP = maxHP;
+    }
+
+    public void ResetProgression()
+    {
+        Level = 1;
+        Experience = 0f;
+        System.Array.Clear(upgradeStacks, 0, upgradeStacks.Length);
+        foreach (HeroOrbitingSaw saw in orbitingSaws) if (saw != null) Destroy(saw.gameObject);
+        orbitingSaws.Clear();
+        StopAllCoroutines();
+        pendingUpgradeOffers.Clear();
+        currentThought = null;
+        upgradeDecisionRoutine = null;
+        nextInfernoField = Time.time + 4f;
+        maxHP = HeroDoomGameManager.Instance != null ? HeroDoomGameManager.Instance.baseHeroHP : 500f;
+        currentHP = maxHP;
+    }
+
+    private void QueueUpgradeDecision()
+    {
+        HeroUpgradeOffer offer = BuildUpgradeOffer();
+        if (offer.first == null || offer.second == null) return;
+        pendingUpgradeOffers.Enqueue(offer);
+        if (upgradeDecisionRoutine == null && isActiveAndEnabled)
+            upgradeDecisionRoutine = StartCoroutine(ProcessUpgradeDecisions());
+    }
+
+    private HeroUpgradeOffer BuildUpgradeOffer()
+    {
+        List<HeroUpgradeDefinition> options = new();
+        foreach (HeroUpgradeDefinition definition in upgradeDefinitions)
+        {
+            if (definition != null && (int)definition.type >= 0 && (int)definition.type < upgradeStacks.Length && upgradeStacks[(int)definition.type] < 5)
+                options.Add(definition);
+        }
+        if (options.Count == 0) return default;
+        if (options.Count == 1) return new HeroUpgradeOffer { first = options[0], second = options[0] };
+
+        float[] state = BuildUpgradeDecisionState();
+        Dictionary<HeroUpgradeDefinition, float> offerScores = new();
+        foreach (HeroUpgradeDefinition option in options)
+            offerScores[option] = ScoreUpgrade(option, state) + Random.Range(-0.16f, 0.16f);
+        options.Sort((a, b) => offerScores[b].CompareTo(offerScores[a]));
+        return new HeroUpgradeOffer { first = options[0], second = options[1] };
+    }
+
+    private float[] BuildUpgradeDecisionState()
     {
         float hpRatio = currentHP / Mathf.Max(1f, maxHP);
-        int nearby = 0;
-        int nearbyMelee = 0;
-        int nearbyMage = 0;
-        int nearbyTank = 0;
-        int nearbyAssassin = 0;
-
-        foreach (MonsterAI m in MonsterAI.ActiveMonsters)
+        float crowd = 0f, close = 0f, ranged = 0f, weakened = 0f;
+        int nearbyCount = 0;
+        foreach (MonsterAI monster in MonsterAI.ActiveMonsters)
         {
-            if (m == null || !m.IsAlive) continue;
-
-            float distance = FlatDistance(transform.position, m.transform.position);
-            if (distance > 7f) continue;
-
-            nearby++;
-            switch (m.role)
-            {
-                case MonsterRole.Mage: nearbyMage++; break;
-                case MonsterRole.Tank: nearbyTank++; break;
-                case MonsterRole.Assassin: nearbyAssassin++; break;
-                default: nearbyMelee++; break;
-            }
+            if (monster == null || !monster.IsAlive) continue;
+            float distance = FlatDistance(transform.position, monster.transform.position);
+            if (distance <= 8f) { crowd += 1f - distance / 10f; nearbyCount++; }
+            if (distance <= 4f) close += 1f - distance / 5f;
+            if (monster.role == MonsterRole.Mage && distance <= 9f) ranged += 1f - distance / 10f;
+            if (distance <= 8f) weakened += Mathf.Clamp01(1f - monster.HPPercent);
         }
 
-        switch (type)
+        float experienceUrgency = Mathf.Clamp01(Experience / Mathf.Max(1f, ExperienceToNext));
+        float orbValue = 0f;
+        foreach (ExperienceOrb orb in ExperienceOrb.Active)
         {
-            case HeroUpgradeType.MaxHealth: return 5f + (1f - hpRatio) * 7f + nearbyAssassin * 0.8f;
-            case HeroUpgradeType.Damage: return 6f + nearbyTank * 1.8f;
-            case HeroUpgradeType.AttackSpeed: return 5.8f + nearbyTank * 1.2f;
-            case HeroUpgradeType.MoveSpeed: return 3.8f + nearbyMage * 0.9f;
-            case HeroUpgradeType.Armor: return 4.5f + nearbyMelee * 0.8f + nearbyAssassin * 1.4f;
-            case HeroUpgradeType.PickupRange: return 3.2f;
-            case HeroUpgradeType.Cleave: return 2.5f + nearby * 1.45f;
-            case HeroUpgradeType.Knockback: return 3f + nearbyMelee * 0.8f + nearbyAssassin * 1.1f;
-            case HeroUpgradeType.LifeSteal: return 2.8f + (1f - hpRatio) * 9f;
-            case HeroUpgradeType.MultiStrike: return 5f + nearbyTank * 0.8f + nearby * 0.25f;
-            case HeroUpgradeType.Shockwave: return 2f + nearby * 1.75f;
-            case HeroUpgradeType.Execution: return 4.6f + nearbyTank * 0.7f;
-            default: return 1f;
+            if (orb == null || orb.IsCollected) continue;
+            float distance = FlatDistance(transform.position, orb.transform.position);
+            if (distance <= xpSeekRadius) orbValue = Mathf.Max(orbValue, Mathf.Clamp01(orb.value / 8f) * (1f - distance / xpSeekRadius));
         }
+
+        float objectivePressure = targetObjective != null
+            ? Mathf.Clamp01(1f - FlatDistance(transform.position, targetObjective.transform.position) / 24f)
+            : 0f;
+        int offensiveStacks = upgradeStacks[(int)HeroUpgradeType.Damage] + upgradeStacks[(int)HeroUpgradeType.AttackSpeed] +
+                              upgradeStacks[(int)HeroUpgradeType.Cleave] + upgradeStacks[(int)HeroUpgradeType.MultiStrike] +
+                              upgradeStacks[(int)HeroUpgradeType.Shockwave] + upgradeStacks[(int)HeroUpgradeType.ArcaneNova] +
+                              upgradeStacks[(int)HeroUpgradeType.InfernoField] + upgradeStacks[(int)HeroUpgradeType.OrbitingSaws];
+
+        return new[]
+        {
+            Mathf.Clamp01(1f - hpRatio), Mathf.Clamp01(close / 3f), Mathf.Clamp01(crowd / 5f),
+            Mathf.Clamp01(ranged / 3f), nearbyCount > 0 ? Mathf.Clamp01(weakened / nearbyCount) : 0f,
+            Mathf.Clamp01(experienceUrgency * 0.65f + orbValue * 0.35f), objectivePressure,
+            Mathf.Clamp01(offensiveStacks / 12f)
+        };
+    }
+
+    private float ScoreUpgrade(HeroUpgradeDefinition definition, float[] state)
+    {
+        int rank = upgradeStacks[(int)definition.type];
+        float relevance = definition.utility != null ? definition.utility.Score(state) : 0f;
+        float diminishingReturn = Mathf.Lerp(1f, 0.45f, rank / 5f);
+        return relevance * diminishingReturn + (5 - rank) * 0.035f;
+    }
+
+    private IEnumerator ProcessUpgradeDecisions()
+    {
+        while (pendingUpgradeOffers.Count > 0)
+        {
+            HeroUpgradeOffer offer = pendingUpgradeOffers.Dequeue();
+            float thinkingDuration = upgradeThoughtPrefab != null ? upgradeThoughtPrefab.thinkingDuration : 1.25f;
+            if (currentThought != null) Destroy(currentThought.gameObject);
+            currentThought = upgradeThoughtPrefab != null
+                ? Instantiate(upgradeThoughtPrefab, transform.position + Vector3.up * 3.1f, Quaternion.identity)
+                : null;
+            currentThought?.Show(transform, offer.first, offer.second, thinkingDuration);
+            yield return new WaitForSecondsRealtime(thinkingDuration);
+
+            HeroUpgradeDefinition selected = ScoreUpgrade(offer.first, BuildUpgradeDecisionState()) + Random.Range(-0.12f, 0.12f) >=
+                                             ScoreUpgrade(offer.second, BuildUpgradeDecisionState()) + Random.Range(-0.12f, 0.12f)
+                ? offer.first : offer.second;
+            ApplyUpgrade(selected.type);
+            currentThought?.Resolve(selected, upgradeStacks[(int)selected.type]);
+            HeroDoomGameManager.Instance?.SaveHeroProgression(this);
+            float resultDuration = currentThought != null ? currentThought.resultDuration : 0.6f;
+            yield return new WaitForSecondsRealtime(resultDuration);
+            currentThought = null;
+        }
+        upgradeDecisionRoutine = null;
     }
 
     private void ApplyUpgrade(HeroUpgradeType type)
@@ -704,6 +867,16 @@ public class HeroBotAI : MonoBehaviour
             maxHP += add;
             currentHP += add;
         }
+        if (type == HeroUpgradeType.OrbitingSaws) EnsureOrbitingSaws();
+        HeroDoomGameManager.Instance?.SaveHeroProgression(this);
+    }
+
+    public float HealFraction(float fraction)
+    {
+        if (!IsAlive || fraction <= 0f) return 0f;
+        float healed = Mathf.Min(maxHP - currentHP, maxHP * fraction);
+        currentHP += healed;
+        return healed;
     }
 
     public void KillByEnvironment()
@@ -755,12 +928,14 @@ public class HeroBotAI : MonoBehaviour
 
     private bool TryPlaceOnNavMesh()
     {
-        if (agent == null || !agent.enabled) return false;
-        if (agent.isOnNavMesh) return true;
-        if (NavMesh.SamplePosition(transform.position, out NavMeshHit hit, 3f, NavMesh.AllAreas))
+        if (agent == null) return false;
+        if (agent.enabled && agent.isOnNavMesh) return true;
+        if (NavMesh.SamplePosition(transform.position, out NavMeshHit hit, 8f, NavMesh.AllAreas))
         {
-            agent.Warp(hit.position);
-            return true;
+            if (agent.enabled) agent.enabled = false;
+            transform.position = hit.position;
+            agent.enabled = true;
+            return agent.isOnNavMesh || agent.Warp(hit.position);
         }
         return false;
     }

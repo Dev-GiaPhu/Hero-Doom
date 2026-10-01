@@ -59,6 +59,7 @@ public class MonsterAI : MonoBehaviour
     public ExperienceOrb experienceOrbPrefab;
     public SpawnProtection spawnProtection;
     public CombatKnockback knockbackMotor;
+    public HeroSkillBurst hitEffectPrefab;
 
     [Header("Utility AI")]
     [Min(0.05f)] public float decisionInterval = 0.22f;
@@ -75,6 +76,9 @@ public class MonsterAI : MonoBehaviour
     public bool IsAlive { get; private set; } = true;
     public float HPPercent => maxHP <= 0f ? 0f : currentHP / maxHP;
     public CapturePillar GuardPillar { get; private set; }
+    public bool IsPlayerControlled { get; private set; }
+    private Vector3 playerMoveTarget;
+    private bool hasPlayerMoveTarget;
 
     private float appliedHealthMultiplier = 1;
     private float appliedDamageMultiplier = 1;
@@ -182,6 +186,25 @@ public class MonsterAI : MonoBehaviour
         }
 
         if (!TryPlaceOnNavMesh()) return;
+
+        if (IsPlayerControlled)
+        {
+            float heroDistance = FlatDistance(transform.position, heroTarget.transform.position);
+            if (heroDistance <= attackRange && attackTimer <= 0f)
+            {
+                StopMoving();
+                Face(heroTarget.transform.position);
+                AttackHero(role == MonsterRole.Tank);
+            }
+            else if (hasPlayerMoveTarget && FlatDistance(transform.position, playerMoveTarget) > 0.55f)
+                MoveTo(playerMoveTarget, 0.35f);
+            else
+            {
+                hasPlayerMoveTarget = false;
+                StopMoving();
+            }
+            return;
+        }
 
         if (Time.time >= nextDecisionAt || !IsCurrentUtilityActionValid())
         {
@@ -414,6 +437,20 @@ public class MonsterAI : MonoBehaviour
         }
     }
 
+    public void SetPlayerControlled(bool controlled)
+    {
+        IsPlayerControlled = controlled && IsAlive;
+        hasPlayerMoveTarget = false;
+        if (agent != null && agent.enabled && agent.isOnNavMesh) agent.ResetPath();
+    }
+
+    public void SetPlayerMoveTarget(Vector3 destination)
+    {
+        if (!IsPlayerControlled || !IsAlive) return;
+        playerMoveTarget = destination;
+        hasPlayerMoveTarget = true;
+    }
+
     private void ExecuteRetreatAction(float distance)
     {
         if (role != MonsterRole.Mage)
@@ -596,7 +633,8 @@ public class MonsterAI : MonoBehaviour
         attackTimer = Mathf.Max(0.1f, attackCooldown);
         Trigger("Attack");
 
-        float damage = attackDamage;
+        CapturePillarManager pillars = CapturePillarManager.Instance;
+        float damage = attackDamage * (pillars != null ? pillars.MonsterDamageMultiplier : 1f);
         if (role == MonsterRole.Assassin && heroTarget.CurrentHP / Mathf.Max(1f, heroTarget.MaxHP) < 0.35f)
             damage *= 1.2f;
 
@@ -635,8 +673,12 @@ public class MonsterAI : MonoBehaviour
         if (role == MonsterRole.Tank && Random.value < 0.22f)
             amount *= 0.45f;
 
-        float actual = Mathf.Min(currentHP, amount * (1f - armor));
+        CapturePillarManager pillars = CapturePillarManager.Instance;
+        float pillarProtection = pillars != null ? Mathf.Max(1f, pillars.MonsterHealthMultiplier) : 1f;
+        float actual = Mathf.Min(currentHP, amount * (1f - armor) / pillarProtection);
         currentHP -= actual;
+        if (actual > 0f)
+            HeroSkillBurst.Spawn(hitEffectPrefab, transform.position + Vector3.up * 0.9f);
 
         DamagePopup.Spawn(
             damagePopupPrefab,
@@ -754,13 +796,15 @@ public class MonsterAI : MonoBehaviour
 
     private bool TryPlaceOnNavMesh()
     {
-        if (agent == null || !agent.enabled) return false;
-        if (agent.isOnNavMesh) return true;
+        if (agent == null) return false;
+        if (agent.enabled && agent.isOnNavMesh) return true;
 
-        if (NavMesh.SamplePosition(transform.position, out NavMeshHit hit, 2.5f, NavMesh.AllAreas))
+        if (NavMesh.SamplePosition(transform.position, out NavMeshHit hit, 8f, NavMesh.AllAreas))
         {
-            agent.Warp(hit.position);
-            return true;
+            if (agent.enabled) agent.enabled = false;
+            transform.position = hit.position;
+            agent.enabled = true;
+            return agent.isOnNavMesh || agent.Warp(hit.position);
         }
         return false;
     }

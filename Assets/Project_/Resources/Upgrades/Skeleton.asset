@@ -15,14 +15,15 @@ MonoBehaviour:
   role: 0
   displayName: Skeleton
   icon: {fileID: 1778262270, guid: c173592673edd0b40a2a732360051046, type: 3}
-  maxPowerLevel: 10
-  basePowerCost: 40
+  unlockCost: 0
+  maxPowerLevel: 2147483647
+  basePowerCost: 35
   powerCostGrowth: 1.45
-  healthPerLevel: 0.12
-  damagePerLevel: 0.1
+  healthPerLevel: 0.1
+  damagePerLevel: 0.09
   maxAutoLevel: 6
-  baseAutoCost: 80
-  autoCostGrowth: 1.6
+  baseAutoCost: 100
+  autoCostGrowth: 1.55
   startingInterval: 18
   intervalMultiplier: 0.75
   minimumInterval: 4

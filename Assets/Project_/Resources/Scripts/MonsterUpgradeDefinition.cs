@@ -6,8 +6,10 @@ public class MonsterUpgradeDefinition : ScriptableObject
     public MonsterRole role;
     public string displayName;
     public Sprite icon;
+    [Header("Unlock")]
+    [Min(0)] public double unlockCost = 100d;
     [Header("Power - gold per rank = base x growth ^ rank")]
-    [Min(1)] public int maxPowerLevel = 10;
+    [Min(1)] public int maxPowerLevel = int.MaxValue;
     [Min(1)] public float basePowerCost = 50;
     [Min(1)] public float powerCostGrowth = 1.6f;
     [Min(0)] public float healthPerLevel = 0.15f;
@@ -23,7 +25,12 @@ public class MonsterUpgradeDefinition : ScriptableObject
     [Min(1)] public int maxAlive = 18;
     [Tooltip("Off: purchasing automation pays for timed summons. On: every summon also costs gold.")]
     public bool chargeGoldPerAutoSummon;
-    public double PowerCost(int level) => basePowerCost * System.Math.Pow(powerCostGrowth, level);
+    public double PowerCost(int level)
+    {
+        double exponent = level * System.Math.Log(System.Math.Max(1.0001f, powerCostGrowth));
+        if (exponent > 700d) return double.MaxValue;
+        return basePowerCost * System.Math.Exp(exponent);
+    }
     public double AutoCost(int level) => baseAutoCost * System.Math.Pow(autoCostGrowth, level);
     public float Interval(int level) => Mathf.Max(minimumInterval, startingInterval * Mathf.Pow(intervalMultiplier, Mathf.Max(0, level - 1)));
 }

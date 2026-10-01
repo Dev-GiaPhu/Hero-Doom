@@ -14,4 +14,14 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   type: 3
   displayName: Move Speed
-  icon: {fileID: 0}
+  icon: {fileID: 21300000, guid: a36d7e69bdc79004fbd0c10f9d1e7e39, type: 3}
+  description: Move faster while chasing enemies, experience, or objectives.
+  utility:
+    survivalNeed: 0
+    closeThreat: 0.2
+    enemyCrowding: 0.15
+    rangedThreat: 0.1
+    weakenedEnemies: 0
+    experienceUrgency: 0.5
+    objectivePressure: 0.75
+    offensiveSynergy: 0.1

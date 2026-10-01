@@ -15,14 +15,15 @@ MonoBehaviour:
   role: 2
   displayName: Tank
   icon: {fileID: -1781390094, guid: c173592673edd0b40a2a732360051046, type: 3}
-  maxPowerLevel: 10
-  basePowerCost: 140
-  powerCostGrowth: 1.55
-  healthPerLevel: 0.16
-  damagePerLevel: 0.08
+  unlockCost: 450
+  maxPowerLevel: 2147483647
+  basePowerCost: 150
+  powerCostGrowth: 1.52
+  healthPerLevel: 0.13
+  damagePerLevel: 0.07
   maxAutoLevel: 6
-  baseAutoCost: 280
-  autoCostGrowth: 1.7
+  baseAutoCost: 300
+  autoCostGrowth: 1.65
   startingInterval: 30
   intervalMultiplier: 0.8
   minimumInterval: 8

@@ -14,4 +14,14 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   type: 6
   displayName: Cleave
-  icon: {fileID: 0}
+  icon: {fileID: 21300000, guid: 54d39db06911aef4a84020b0dfd3f1da, type: 3}
+  description: Attacks also damage nearby monsters.
+  utility:
+    survivalNeed: 0
+    closeThreat: 0.15
+    enemyCrowding: 0.2
+    rangedThreat: 1.2
+    weakenedEnemies: 0
+    experienceUrgency: 0
+    objectivePressure: 0.15
+    offensiveSynergy: 0.55

@@ -15,14 +15,15 @@ MonoBehaviour:
   role: 3
   displayName: Assassin
   icon: {fileID: 1930990730, guid: c173592673edd0b40a2a732360051046, type: 3}
-  maxPowerLevel: 10
-  basePowerCost: 120
+  unlockCost: 850
+  maxPowerLevel: 2147483647
+  basePowerCost: 220
   powerCostGrowth: 1.55
-  healthPerLevel: 0.08
-  damagePerLevel: 0.15
+  healthPerLevel: 0.07
+  damagePerLevel: 0.13
   maxAutoLevel: 6
-  baseAutoCost: 360
-  autoCostGrowth: 1.75
+  baseAutoCost: 420
+  autoCostGrowth: 1.7
   startingInterval: 34
   intervalMultiplier: 0.8
   minimumInterval: 10

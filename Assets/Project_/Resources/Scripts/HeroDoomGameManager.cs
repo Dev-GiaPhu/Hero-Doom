@@ -15,8 +15,11 @@ public class HeroDoomGameManager : MonoBehaviour
 
     [Header("Economy")]
     public double startingGold = 50d;
-    public double passiveGoldPerSecond = 2d;
-    public double goldPerDamage = 0.5d;
+    public double passiveGoldPerSecond = 0.35d;
+    public double goldPerDamage = 0.05d;
+    [Header("Economy pacing")]
+    [Min(1f)] public double economySoftPressureGold = 1400d;
+    [Range(.1f, 1f)] public float incomeAtSoftPressure = .68f;
 
     [Header("Scene References")]
     public InfiniteMapGenerator map;
@@ -31,6 +34,12 @@ public class HeroDoomGameManager : MonoBehaviour
 
     private float respawnTimer;
     private Vector3 lastHeroDeathPosition;
+    private int savedHeroLevel = 1;
+    private float savedHeroExperience;
+    private readonly int[] savedHeroUpgrades = new int[16];
+    private float rebirthGoldMultiplier = 1f;
+    private float timedGoldMultiplier = 1f;
+    private float timedGoldRemaining;
 
     void Awake()
     {
@@ -56,7 +65,13 @@ public class HeroDoomGameManager : MonoBehaviour
 
     void Update()
     {
-        Gold += passiveGoldPerSecond * GetGoldMultiplier() * Time.deltaTime;
+        if (timedGoldRemaining > 0f)
+        {
+            timedGoldRemaining = Mathf.Max(0f, timedGoldRemaining - Time.deltaTime);
+            if (timedGoldRemaining <= 0f) timedGoldMultiplier = 1f;
+        }
+        double pace = EconomyPacing;
+        Gold += passiveGoldPerSecond * pace * GetGoldMultiplier() * rebirthGoldMultiplier * timedGoldMultiplier * Time.deltaTime;
 
         if (respawnTimer > 0f)
         {
@@ -77,6 +92,7 @@ public class HeroDoomGameManager : MonoBehaviour
             baseHeroHP + heroHPPerDeath * HeroDeaths;
 
         hero.SetPermanentDifficulty(permanentMaxHP);
+        hero.RestoreProgression(savedHeroLevel, savedHeroExperience, savedHeroUpgrades);
     }
 
     public void NotifyHeroDied(HeroBotAI hero)
@@ -87,10 +103,56 @@ public class HeroDoomGameManager : MonoBehaviour
             return;
 
         lastHeroDeathPosition = hero.transform.position;
+        SaveHeroProgression(hero);
         CurrentHero = null;
         HeroDeaths++;
         respawnTimer = Mathf.Max(0.1f, respawnDelay);
     }
+
+    public void SaveHeroProgression(HeroBotAI hero)
+    {
+        if (hero == null) return;
+        hero.CopyProgressionTo(savedHeroUpgrades, out savedHeroLevel, out savedHeroExperience);
+    }
+
+    public void ApplyPlayerRebirth(double startingGoldAmount, float goldMultiplier)
+    {
+        // A rebirth starts a clean run; only its permanent gold reward survives.
+        Gold = startingGoldAmount;
+        rebirthGoldMultiplier = Mathf.Max(1f, goldMultiplier);
+        timedGoldMultiplier = 1f;
+        timedGoldRemaining = 0f;
+        HeroDeaths = 0;
+        respawnTimer = 0f;
+        savedHeroLevel = 1;
+        savedHeroExperience = 0f;
+        System.Array.Clear(savedHeroUpgrades, 0, savedHeroUpgrades.Length);
+        if (CurrentHero != null && CurrentHero.IsAlive) CurrentHero.ResetProgression();
+        foreach (MonsterAI monster in new System.Collections.Generic.List<MonsterAI>(MonsterAI.ActiveMonsters))
+            if (monster != null) monster.KillByEnvironment();
+        playerSpawner?.ResetControlForRebirth();
+        playerSpawner?.upgrades?.ResetForRebirth();
+        pillarManager?.ResetPillarControl();
+        FindFirstObjectByType<LuckyWheelController>()?.ResetForRebirth();
+    }
+
+    private double EconomyPacing
+    {
+        get
+        {
+            double pressure = System.Math.Max(0d, Gold) / System.Math.Max(1d, economySoftPressureGold);
+            return System.Math.Max(incomeAtSoftPressure, 1d / System.Math.Sqrt(1d + pressure * .2d));
+        }
+    }
+
+    public void ApplyTimedGoldBoost(float multiplier, float duration)
+    {
+        if (duration <= 0f || multiplier <= 1f) return;
+        timedGoldMultiplier = Mathf.Max(timedGoldMultiplier, multiplier);
+        timedGoldRemaining = Mathf.Max(timedGoldRemaining, duration);
+    }
+
+    public float TimedGoldBoostRemaining => timedGoldRemaining;
 
     private void SpawnHero(Vector3 near)
     {
@@ -173,6 +235,11 @@ public class HeroDoomGameManager : MonoBehaviour
         return true;
     }
 
+    public void GrantGold(double amount)
+    {
+        if (amount > 0d) Gold += amount;
+    }
+
     public void AddDamageGold(float actualDamage)
     {
         if (actualDamage <= 0f) return;
@@ -180,7 +247,7 @@ public class HeroDoomGameManager : MonoBehaviour
         Gold +=
             actualDamage *
             goldPerDamage *
-            GetGoldMultiplier();
+            (float)EconomyPacing * GetGoldMultiplier() * rebirthGoldMultiplier * timedGoldMultiplier;
     }
 
     public float GetGoldMultiplier()

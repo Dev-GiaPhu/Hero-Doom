@@ -1,4 +1,5 @@
 using UnityEngine;
+using UnityEngine.VFX;
 
 [DisallowMultipleComponent]
 public class SpawnProtection : MonoBehaviour
@@ -7,6 +8,10 @@ public class SpawnProtection : MonoBehaviour
     [Tooltip("Authored child object, visible in Prefab Mode and hidden when protection expires.")]
     public GameObject ringVisual;
     public Renderer ringRenderer;
+    [Tooltip("Second authored sphere shell, used as a visible transparent energy bubble beneath the Shader Graph layer.")]
+    public Renderer energyShellRenderer;
+    [Tooltip("Authored Visual Effect Graph that adds moving energy motes around the Shader Graph sphere.")]
+    public VisualEffect energyGraphEffect;
     public float rotationSpeed = 45f;
     [Range(0.05f, 1f)] public float fadeOutDuration = 0.4f;
     [Range(0.05f, 0.6f)] public float introPulseDuration = 0.22f;
@@ -15,6 +20,7 @@ public class SpawnProtection : MonoBehaviour
     public float Remaining => Mathf.Max(0, expiresAt - Time.time);
     private float expiresAt;
     private MaterialPropertyBlock properties;
+    private MaterialPropertyBlock shellProperties;
     private Vector3 ringBaseScale = Vector3.one;
     private float startedAt;
 
@@ -34,6 +40,12 @@ public class SpawnProtection : MonoBehaviour
             ringBaseScale = ringVisual.transform.localScale;
             ringVisual.transform.localScale = ringBaseScale * 0.72f;
             ringVisual.SetActive(duration > 0);
+        }
+        if (energyGraphEffect != null && duration > 0f && energyGraphEffect.visualEffectAsset != null)
+        {
+            energyGraphEffect.Reinit();
+            energyGraphEffect.Play();
+            energyGraphEffect.SendEvent("OnPlay");
         }
         UpdateVisual();
     }
@@ -63,11 +75,21 @@ public class SpawnProtection : MonoBehaviour
         ringRenderer.GetPropertyBlock(properties);
         properties.SetFloat("_Opacity", Mathf.Clamp01(Remaining / Mathf.Max(0.05f, fadeOutDuration)));
         ringRenderer.SetPropertyBlock(properties);
+        if (energyShellRenderer != null)
+        {
+            shellProperties ??= new MaterialPropertyBlock();
+            energyShellRenderer.GetPropertyBlock(shellProperties);
+            Color shellColor = new Color(0.12f, 0.82f, 1f, Mathf.Lerp(0.02f, 0.16f, Mathf.Clamp01(Remaining / Mathf.Max(0.05f, fadeOutDuration))));
+            shellProperties.SetColor("_BaseColor", shellColor);
+            shellProperties.SetColor("_Color", shellColor);
+            energyShellRenderer.SetPropertyBlock(shellProperties);
+        }
     }
 
     public void End()
     {
         expiresAt = 0;
+        if (energyGraphEffect != null) energyGraphEffect.Stop();
         if (ringVisual != null)
         {
             ringVisual.transform.localScale = ringBaseScale;

@@ -14,4 +14,14 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   type: 4
   displayName: Armor
-  icon: {fileID: 0}
+  icon: {fileID: 21300000, guid: 063818116a9bad04cb4935f2f491cb89, type: 3}
+  description: Reduce damage received from monsters.
+  utility:
+    survivalNeed: 0.1
+    closeThreat: 1.1
+    enemyCrowding: 0.25
+    rangedThreat: 0.1
+    weakenedEnemies: 0
+    experienceUrgency: 0
+    objectivePressure: 0
+    offensiveSynergy: 0.1

@@ -12,10 +12,22 @@ public class CapturePillarManager : MonoBehaviour
     public float relocateInterval = 120f;
     public float edgePadding = 12f;
     public InfiniteMapGenerator map;
+    [Header("Faction bonuses per owned pillar")]
+    [Range(0f, 1f)] public float heroDamageBonusPerPillar = 0.12f;
+    [Range(0f, 1f)] public float monsterDamageBonusPerPillar = 0.12f;
+    [Range(0f, 0.5f)] public float heroHealthBonusPerPillar = 0.1f;
+    [Range(0f, 0.5f)] public float monsterHealthBonusPerPillar = 0.1f;
 
     private readonly List<CapturePillar> pillars = new();
     private float relocateTimer;
     private GameObject pillarVisualPrefab;
+    private float occupancyTimer;
+    private float spawnRetryTimer;
+    private bool pillarPrefabErrorLogged;
+    public float HeroDamageMultiplier => 1f + CountOwned(PillarFaction.Hero) * heroDamageBonusPerPillar;
+    public float MonsterDamageMultiplier => 1f + CountOwned(PillarFaction.Summoner) * monsterDamageBonusPerPillar;
+    public float HeroHealthMultiplier => 1f + CountOwned(PillarFaction.Hero) * heroHealthBonusPerPillar;
+    public float MonsterHealthMultiplier => 1f + CountOwned(PillarFaction.Summoner) * monsterHealthBonusPerPillar;
 
     public float GoldMultiplier
     {
@@ -23,7 +35,7 @@ public class CapturePillarManager : MonoBehaviour
         {
             int captured = 0;
             foreach (CapturePillar p in pillars)
-                if (p != null && p.IsCaptured) captured++;
+                if (p != null && p.faction == PillarFaction.Summoner) captured++;
             return 1f + captured * goldBonusPerCapturedPillar;
         }
     }
@@ -32,6 +44,9 @@ public class CapturePillarManager : MonoBehaviour
     {
         Instance = this;
         if (map == null) map = FindFirstObjectByType<InfiniteMapGenerator>();
+        // The project already ships the pillar as Resources/Prefabs/Environment/pillar.
+        // Keep the manager pointed at that authored asset so the component the user
+        // sees in the Project window is the exact prefab used at runtime.
         pillarVisualPrefab = Resources.Load<GameObject>("Prefabs/Environment/pillar");
     }
 
@@ -43,11 +58,22 @@ public class CapturePillarManager : MonoBehaviour
 
     void Update()
     {
+        occupancyTimer -= Time.deltaTime;
+        if (occupancyTimer <= 0f)
+        {
+            occupancyTimer = 0.2f;
+            RefreshPillars();
+        }
         relocateTimer -= Time.deltaTime;
         if (relocateTimer <= 0f)
         {
             SpawnAll();
             relocateTimer = Mathf.Max(10f, relocateInterval);
+        }
+        if (pillars.Count < pillarCount && Time.time >= spawnRetryTimer)
+        {
+            spawnRetryTimer = Time.time + 2f;
+            SpawnMissingPillars();
         }
     }
 
@@ -62,37 +88,65 @@ public class CapturePillarManager : MonoBehaviour
         }
         pillars.Clear();
 
-        if (map == null) return;
+        SpawnMissingPillars();
+    }
 
-        for (int i = 0; i < pillarCount; i++)
+    private void SpawnMissingPillars()
+    {
+        if (map == null) map = FindFirstObjectByType<InfiniteMapGenerator>();
+        if (map == null) return;
+        if (pillarVisualPrefab == null)
+        {
+            if(!pillarPrefabErrorLogged) Debug.LogError("Missing Resources/Prefabs/Environment/pillar.prefab.", this);
+            pillarPrefabErrorLogged=true;
+            return;
+        }
+
+        int attempts = Mathf.Max(8, pillarCount * 8);
+        while (pillars.Count < pillarCount && attempts-- > 0)
         {
             if (!map.TryGetRandomSafeGround(edgePadding, out Vector3 pos)) continue;
+            GameObject go = Instantiate(pillarVisualPrefab, pos, Quaternion.identity);
 
-            GameObject go;
-            if (pillarVisualPrefab != null) go = Instantiate(pillarVisualPrefab, pos, Quaternion.identity);
-            else
+            go.name = $"EnergyPillar_{pillars.Count + 1}";
+            CapturePillar pillar = go.GetComponent<CapturePillar>();
+            if (pillar == null)
             {
-                go = GameObject.CreatePrimitive(PrimitiveType.Cylinder);
-                go.transform.position = pos;
-                go.transform.localScale = new Vector3(0.7f, 2f, 0.7f);
+                Debug.LogError("The authored pillar prefab needs CapturePillar component.", go);
+                Destroy(go);
+                pillarVisualPrefab = null;
+                pillarPrefabErrorLogged=true;
+                return;
             }
-
-            go.name = $"EnergyPillar_{i + 1}";
-            CapturePillar pillar = go.AddComponent<CapturePillar>();
             pillar.captureRadius = captureRadius;
             pillar.goldBonus = goldBonusPerCapturedPillar;
-
-            SphereCollider trigger = go.AddComponent<SphereCollider>();
-            trigger.isTrigger = true;
-            trigger.radius = captureRadius;
-            trigger.center = Vector3.zero;
-
-            Rigidbody rb = go.GetComponent<Rigidbody>();
-            if (rb == null) rb = go.AddComponent<Rigidbody>();
-            rb.isKinematic = true;
-            rb.useGravity = false;
+            SphereCollider trigger = go.GetComponent<SphereCollider>();
+            if (trigger != null) trigger.radius = captureRadius;
 
             pillars.Add(pillar);
+        }
+    }
+
+    private int CountOwned(PillarFaction faction)
+    {
+        int count = 0;
+        foreach (CapturePillar pillar in pillars) if (pillar != null && pillar.faction == faction) count++;
+        return count;
+    }
+
+    private void RefreshPillars()
+    {
+        HeroBotAI hero = HeroDoomGameManager.Instance != null ? HeroDoomGameManager.Instance.CurrentHero : null;
+        var monsters = new List<MonsterAI>(MonsterAI.ActiveMonsters);
+        foreach (CapturePillar pillar in pillars)
+        {
+            if (pillar == null) continue;
+            bool heroInside = hero != null && hero.IsAlive && pillar.IsInside(hero.transform.position);
+            bool monsterInside = false;
+            foreach (MonsterAI monster in monsters)
+                if (monster != null && monster.IsAlive && pillar.IsInside(monster.transform.position)) { monsterInside = true; break; }
+            pillar.RefreshOccupancy(heroInside, monsterInside);
+            pillar.TryFire(hero, monsters);
         }
     }
 
@@ -120,5 +174,11 @@ public class CapturePillarManager : MonoBehaviour
                 return;
             }
         }
+    }
+
+    public void ResetPillarControl()
+    {
+        foreach (CapturePillar pillar in pillars)
+            if (pillar != null) pillar.RefreshOccupancy(false, false, true);
     }
 }

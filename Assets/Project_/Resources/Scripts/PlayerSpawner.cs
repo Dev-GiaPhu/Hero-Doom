@@ -57,6 +57,7 @@ public class PlayerSpawner : MonoBehaviour
     private InfiniteMapGenerator map;
     private Vector3 crosshairBaseScale = Vector3.one;
     private Coroutine crosshairPulseRoutine;
+    private MonsterAI controlledMonster;
 
     void Start()
     {
@@ -78,7 +79,8 @@ public class PlayerSpawner : MonoBehaviour
                 EventSystem.current.IsPointerOverGameObject())
                 return;
 
-            SpawnMonster();
+            if (controlledMonster != null && controlledMonster.IsAlive) CommandControlledMonster();
+            else SpawnMonster();
         }
     }
 
@@ -90,13 +92,45 @@ public class PlayerSpawner : MonoBehaviour
         if (Keyboard.current.digit2Key.wasPressedThisFrame) SelectMonster(1);
         if (Keyboard.current.digit3Key.wasPressedThisFrame) SelectMonster(2);
         if (Keyboard.current.digit4Key.wasPressedThisFrame) SelectMonster(3);
+
+        if (Keyboard.current.fKey.wasPressedThisFrame) CycleControlledMonster();
+    }
+
+    private void CycleControlledMonster()
+    {
+        var alive = new System.Collections.Generic.List<MonsterAI>();
+        foreach (MonsterAI monster in MonsterAI.ActiveMonsters)
+            if (monster != null && monster.IsAlive) alive.Add(monster);
+        alive.Sort((a, b) => a.GetInstanceID().CompareTo(b.GetInstanceID()));
+        if (alive.Count == 0) { controlledMonster = null; return; }
+
+        int index = controlledMonster == null ? -1 : alive.IndexOf(controlledMonster);
+        if (controlledMonster != null) controlledMonster.SetPlayerControlled(false);
+        controlledMonster = alive[(index + 1) % alive.Count];
+        controlledMonster.SetPlayerControlled(true);
+    }
+
+    private void CommandControlledMonster()
+    {
+        if (mainCam == null || Mouse.current == null || controlledMonster == null) return;
+        Ray ray = mainCam.ScreenPointToRay(Mouse.current.position.ReadValue());
+        if (Physics.Raycast(ray, out RaycastHit hit, 500f, groundLayer) && IsValidSpawn(hit.point))
+            controlledMonster.SetPlayerMoveTarget(hit.point);
     }
 
     public void SelectMonster(int index)
     {
         if (index < 0 || index >= 4) return;
+        if (upgrades != null && !upgrades.IsMonsterUnlocked(index)) return;
 
         currentMonsterIndex = index;
+        SelectedMonsterChanged?.Invoke(currentMonsterIndex);
+    }
+
+    public void ResetControlForRebirth()
+    {
+        currentMonsterIndex=0;
+        controlledMonster=null;
         SelectedMonsterChanged?.Invoke(currentMonsterIndex);
     }
 
@@ -207,7 +241,7 @@ public class PlayerSpawner : MonoBehaviour
 
     public bool TrySpawn(int slot, Vector3 point, bool chargeGold)
     {
-        if (slot < 0 || slot > 3 || (upgrades != null && !upgrades.CanSpawn(slot))) return false;
+        if (slot < 0 || slot > 3 || (upgrades != null && (!upgrades.IsMonsterUnlocked(slot) || !upgrades.CanSpawn(slot)))) return false;
         GameObject prefab = GetPrefab(slot);
         if (prefab == null || prefab.GetComponent<MonsterAI>() == null) return false;
         if (map == null) map = FindFirstObjectByType<InfiniteMapGenerator>();
@@ -220,6 +254,7 @@ public class PlayerSpawner : MonoBehaviour
         go.name = $"Monster_{slot + 1}_{prefab.name}";
         go.tag = "Enemy";
         MonsterAI ai = go.GetComponent<MonsterAI>();
+        if (controlledMonster != null && !controlledMonster.IsAlive) controlledMonster = null;
         upgrades?.Apply(ai, slot);
         CapturePillarManager.Instance?.TryAssignGuard(ai, navHit.position);
         return true;

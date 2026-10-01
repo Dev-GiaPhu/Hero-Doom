@@ -36,28 +36,31 @@ public class MonsterUpgradeCard : MonoBehaviour
     {
         if (upgrades == null || upgrades.definitions.Length <= slot || upgrades.definitions[slot] == null) return;
         MonsterUpgradeDefinition d = upgrades.definitions[slot];
+        bool unlocked = upgrades.IsMonsterUnlocked(slot);
         int p = upgrades.PowerLevel(slot), a = upgrades.AutoLevel(slot);
-        if (title != null) title.text = d.displayName;
+        if (title != null) title.text = unlocked ? d.displayName : $"LOCKED  {d.displayName}";
         if (icon != null) icon.sprite = d.icon;
         int alive = upgrades.AliveCount(slot);
         double summonCost = upgrades.spawner != null ? upgrades.spawner.GetCost(slot) : 0d;
-        if (stats != null) stats.text =
-            $"SUMMON {HeroDoomGameManager.FormatNumber(summonCost)} G   FIELD {alive}/{d.maxAlive}\n" +
-            $"HP +{d.healthPerLevel * p:P0}   ATK +{d.damagePerLevel * p:P0}";
-        if (powerLabel != null) powerLabel.text = p >= d.maxPowerLevel ? $"POWER Lv.{p}/{d.maxPowerLevel}  MAX" :
-            $"POWER Lv.{p}/{d.maxPowerLevel}  |  {HeroDoomGameManager.FormatNumber(d.PowerCost(p))} G";
+        if (stats != null) stats.text = !unlocked
+            ? $"UNLOCK COST  {HeroDoomGameManager.FormatNumber(upgrades.UnlockCost(slot))} G\nUnlock after {upgrades.definitions[slot - 1].displayName}"
+            : $"SUMMON {HeroDoomGameManager.FormatNumber(summonCost)} G   FIELD {alive}/{d.maxAlive}\nHP +{d.healthPerLevel * p:P0}   ATK +{d.damagePerLevel * p:P0}";
+        if (powerLabel != null) powerLabel.text = !unlocked
+            ? $"UNLOCK  {HeroDoomGameManager.FormatNumber(upgrades.UnlockCost(slot))} G"
+            : $"POWER Lv.{p}/∞  |  {HeroDoomGameManager.FormatNumber(d.PowerCost(p))} G";
         if (autoLabel != null) autoLabel.text = a >= d.maxAutoLevel ? $"AUTO Lv.{a}/{d.maxAutoLevel}  MAX" :
             $"AUTO Lv.{a}/{d.maxAutoLevel}  |  {HeroDoomGameManager.FormatNumber(d.AutoCost(a))} G";
         if (autoStatus != null)
         {
-            if (!upgrades.IsAutoUnlocked(slot)) autoStatus.text = $"Requires {upgrades.definitions[slot - 1].displayName} AUTO {d.previousMonsterAutoLevelRequired}";
+            if (!unlocked) autoStatus.text = "Unlock this monster to access automation";
+            else if (!upgrades.IsAutoUnlocked(slot)) autoStatus.text = $"Requires {upgrades.definitions[slot - 1].displayName} AUTO {d.previousMonsterAutoLevelRequired}";
             else if (a == 0) autoStatus.text = $"Unlock: one summon / {d.startingInterval:0}s";
             else if (upgrades.IsGlobalArmyFull) autoStatus.text = $"Army full {MonsterAI.ActiveMonsters.Count}/{upgrades.maxAliveMonsters} - waiting";
             else if (alive >= d.maxAlive) autoStatus.text = $"{d.displayName} cap {alive}/{d.maxAlive} - waiting";
             else autoStatus.text = $"Next {upgrades.Remaining(slot):0.0}s  |  Every {d.Interval(a):0.0}s";
         }
         if (progress != null) progress.fillAmount = a == 0 ? 0 : 1 - Mathf.Clamp01(upgrades.Remaining(slot) / d.Interval(a));
-        if (powerButton != null) powerButton.interactable = upgrades.CanBuyPower(slot);
-        if (autoButton != null) autoButton.interactable = upgrades.CanBuyAuto(slot);
+        if (powerButton != null) powerButton.interactable = unlocked ? upgrades.CanBuyPower(slot) : upgrades.CanUnlock(slot);
+        if (autoButton != null) autoButton.interactable = unlocked && upgrades.CanBuyAuto(slot);
     }
 }

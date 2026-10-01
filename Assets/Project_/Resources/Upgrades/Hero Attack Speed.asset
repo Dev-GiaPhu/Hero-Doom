@@ -14,4 +14,14 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   type: 2
   displayName: Attack Speed
-  icon: {fileID: 0}
+  icon: {fileID: 21300000, guid: 7c05090c0ab0f48438a77d0d00ac8884, type: 3}
+  description: Shorten the delay between attacks.
+  utility:
+    survivalNeed: 0
+    closeThreat: 0.1
+    enemyCrowding: 0.25
+    rangedThreat: 0.35
+    weakenedEnemies: 0.1
+    experienceUrgency: 0
+    objectivePressure: 0.2
+    offensiveSynergy: 0.85

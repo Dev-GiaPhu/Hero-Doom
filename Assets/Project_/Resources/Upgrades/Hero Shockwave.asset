@@ -14,4 +14,14 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   type: 10
   displayName: Shockwave
-  icon: {fileID: 0}
+  icon: {fileID: 21300000, guid: 8091542f7894c9a4cb74a81a3cc0d6d1, type: 3}
+  description: Every few attacks, release an area shockwave around the Hero.
+  utility:
+    survivalNeed: 0
+    closeThreat: 0.15
+    enemyCrowding: 0.2
+    rangedThreat: 1.25
+    weakenedEnemies: 0
+    experienceUrgency: 0
+    objectivePressure: 0.1
+    offensiveSynergy: 0.5

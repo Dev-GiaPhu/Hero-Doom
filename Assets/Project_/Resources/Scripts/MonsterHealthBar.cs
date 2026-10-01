@@ -11,6 +11,8 @@ public class MonsterHealthBar : MonoBehaviour
     public Vector3 worldOffset = new Vector3(0f, 2.25f, 0f);
     [Min(0.02f)] public float fadeInDuration = 0.12f;
     [Min(0.02f)] public float fadeOutDuration = 0.16f;
+    [Tooltip("How quickly the authored fill follows the monster's current HP. Lower values make damage easier to read.")]
+    [Min(0.05f)] public float fillSlideSpeed = 1.6f;
     [Range(0.5f, 1f)] public float hiddenScale = 0.78f;
     public Color healthyColor = new Color(0.25f, 0.9f, 0.35f, 1f);
     public Color woundedColor = new Color(1f, 0.72f, 0.12f, 1f);
@@ -19,6 +21,7 @@ public class MonsterHealthBar : MonoBehaviour
     private Camera targetCamera;
     private float alpha;
     private Vector3 shownScale = Vector3.one;
+    private float displayedHp = 1f;
 
     void Awake()
     {
@@ -26,6 +29,8 @@ public class MonsterHealthBar : MonoBehaviour
         if (visualRoot == null) visualRoot = transform as RectTransform;
         if (visualRoot != null) shownScale = visualRoot.localScale;
         targetCamera = Camera.main;
+        displayedHp = monster != null ? Mathf.Clamp01(monster.HPPercent) : 1f;
+        if (fill != null) fill.fillAmount = displayedHp;
         ApplyVisual(true);
     }
 
@@ -46,7 +51,8 @@ public class MonsterHealthBar : MonoBehaviour
 
         if (fill != null)
         {
-            fill.fillAmount = hp01;
+            displayedHp = Mathf.MoveTowards(displayedHp, hp01, fillSlideSpeed * Time.deltaTime);
+            fill.fillAmount = displayedHp;
             if (hp01 >= 0.5f)
                 fill.color = Color.Lerp(woundedColor, healthyColor, (hp01 - 0.5f) / 0.5f);
             else
