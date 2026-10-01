@@ -19,6 +19,14 @@ public enum HeroUpgradeType
     Execution
 }
 
+public enum HeroUtilityAction
+{
+    Idle,
+    Combat,
+    CollectExperience,
+    AttackObjective
+}
+
 public class HeroBotAI : MonoBehaviour
 {
     [Header("Base Stats")]
@@ -32,11 +40,15 @@ public class HeroBotAI : MonoBehaviour
     public float searchRadius = 24f;
     [Range(0f, 0.8f)] public float armor = 0.05f;
 
-    [Header("Survivor Auto Pickup")]
-    [Tooltip("EXP trong bán kính này được tự động nhặt khi Hero đi ngang qua. Hero không đổi đường để chạy tới EXP.")]
+    [Header("Experience")]
+    [Tooltip("EXP inside this radius is collected automatically.")]
     [Min(0.1f)] public float basePickupRadius = 1.8f;
-    [Tooltip("Khoảng thời gian giữa các lần kiểm tra EXP trong vùng nhặt.")]
+    [Tooltip("How often nearby EXP is collected.")]
     [Range(0.02f, 0.5f)] public float xpPickupCheckInterval = 0.08f;
+    [Tooltip("Maximum distance at which EXP becomes a utility-AI goal.")]
+    [Min(1f)] public float xpSeekRadius = 18f;
+    [Tooltip("Extra utility for EXP when the Hero is close to leveling.")]
+    [Range(0f, 40f)] public float xpLevelUrgencyWeight = 20f;
 
     [Header("Combat Feedback - authored prefabs")]
     public DamagePopup damagePopupPrefab;
@@ -44,9 +56,26 @@ public class HeroBotAI : MonoBehaviour
     public CombatKnockback knockbackMotor;
     [Min(0)] public float knockbackForce = 7f;
     [Min(0)] public float areaKnockbackForce = 9f;
-    [Header("Target Selection")]
+    [Header("Utility AI")]
+    [Tooltip("How often the Hero reevaluates all available actions.")]
+    [Min(0.05f)] public float decisionInterval = 0.25f;
+    [Tooltip("Minimum time the Hero commits to an action before a normal switch is allowed.")]
+    [Min(0f)] public float minimumActionCommitment = 0.8f;
+    [Tooltip("A new action must beat the current action by this amount to interrupt it after commitment.")]
+    [Min(0f)] public float actionSwitchThreshold = 7f;
+    [Tooltip("Utility bonus for continuing the current action. Prevents indecisive thrashing.")]
+    [Min(0f)] public float currentActionInertia = 10f;
+    [Tooltip("How much combat matters relative to other goals.")]
+    [Range(0f, 3f)] public float combatWeight = 1f;
+    [Tooltip("How much collecting EXP matters relative to other goals.")]
+    [Range(0f, 3f)] public float experienceWeight = 1f;
+    [Tooltip("How much attacking captured objectives matters relative to other goals.")]
+    [Range(0f, 3f)] public float objectiveWeight = 0.75f;
+
+    [Header("Combat Target Selection")]
     [Min(0.05f)] public float targetRecheckInterval = 0.35f;
     [Min(0)] public float currentTargetPreference = 2f;
+    [Min(0f)] public float targetSwitchThreshold = 2.5f;
 
     [Header("Level Up - AI chooses one of two")]
     public HeroUpgradeThought upgradeThoughtPrefab;
@@ -67,6 +96,12 @@ public class HeroBotAI : MonoBehaviour
     private readonly int[] upgradeStacks = new int[12];
     private readonly List<ExperienceOrb> xpCollectBuffer = new(16);
     private MonsterAI targetMonster;
+    private ExperienceOrb targetExperience;
+    private CapturePillar targetObjective;
+    [SerializeField] private HeroUtilityAction currentAction = HeroUtilityAction.Idle;
+    [SerializeField] private float currentActionScore;
+    private float nextDecisionAt;
+    private float actionCommittedUntil;
     private Animator anim;
     private NavMeshAgent agent;
     private Rigidbody rb;
@@ -114,38 +149,19 @@ public class HeroBotAI : MonoBehaviour
         if (!TryPlaceOnNavMesh()) return;
 
         targetRecheckTimer -= Time.deltaTime;
-        if (targetMonster == null || !targetMonster.IsAlive || targetRecheckTimer <= 0)
+        if (targetMonster == null || !targetMonster.IsAlive || targetRecheckTimer <= 0f)
         {
             targetMonster = PickBestMonsterTarget();
             targetRecheckTimer = Mathf.Max(0.05f, targetRecheckInterval);
         }
 
-        if (targetMonster != null && targetMonster.IsAlive)
+        if (Time.time >= nextDecisionAt || !IsCurrentActionValid())
         {
-            float distance = FlatDistance(transform.position, targetMonster.transform.position);
-            if (distance > attackRange)
-            {
-                MoveTo(targetMonster.transform.position);
-            }
-            else
-            {
-                StopMoving();
-                Face(targetMonster.transform.position);
-                if (attackTimer <= 0f) AttackTarget();
-            }
-            return;
+            EvaluateUtilityActions();
+            nextDecisionAt = Time.time + Mathf.Max(0.05f, decisionInterval);
         }
 
-        CapturePillar captured = CapturePillarManager.Instance != null
-            ? CapturePillarManager.Instance.FindClosestCaptured(transform.position) : null;
-
-        if (captured != null)
-        {
-            MoveTo(captured.transform.position);
-            return;
-        }
-
-        StopMoving();
+        ExecuteCurrentAction();
     }
 
     private void OnMonsterDied(MonsterAI deadMonster)
@@ -155,8 +171,9 @@ public class HeroBotAI : MonoBehaviour
 
         targetMonster = null;
         attackTimer = 0f;
+        nextDecisionAt = 0f;
 
-        // Không tiếp tục nhìn/chạy vào xác đang phát animation chết.
+        // Re-evaluate immediately instead of continuing toward the corpse.
         StopMoving();
     }
 
@@ -170,6 +187,7 @@ public class HeroBotAI : MonoBehaviour
     {
         MonsterAI best = null;
         float bestScore = float.MinValue;
+        float currentScore = float.MinValue;
 
         foreach (MonsterAI monster in MonsterAI.ActiveMonsters)
         {
@@ -177,20 +195,8 @@ public class HeroBotAI : MonoBehaviour
             float distance = FlatDistance(transform.position, monster.transform.position);
             if (distance > searchRadius) continue;
 
-            float threat;
-            switch (monster.role)
-            {
-                case MonsterRole.Assassin: threat = 7f; break;
-                case MonsterRole.Mage: threat = 6f; break;
-                case MonsterRole.Tank: threat = 3.5f; break;
-                default: threat = 4f; break;
-            }
-
-            float score = threat + Mathf.Max(0f, 8f - distance) * 0.7f;
-            score += (1f - monster.HPPercent) * 2.5f;
-            if (monster.GuardPillar != null) score += 5f;
-
-            if (monster == targetMonster) score += currentTargetPreference;
+            float score = ScoreMonsterTarget(monster, distance);
+            if (monster == targetMonster) currentScore = score + currentTargetPreference;
 
             if (score > bestScore)
             {
@@ -199,7 +205,256 @@ public class HeroBotAI : MonoBehaviour
             }
         }
 
+        if (targetMonster != null && targetMonster.IsAlive && currentScore > float.MinValue &&
+            best != targetMonster && bestScore < currentScore + targetSwitchThreshold)
+            return targetMonster;
+
         return best;
+    }
+
+    private float ScoreMonsterTarget(MonsterAI monster, float distance)
+    {
+        float threat = monster.role switch
+        {
+            MonsterRole.Assassin => 9f,
+            MonsterRole.Mage => 8f,
+            MonsterRole.Tank => 4.5f,
+            _ => 5.5f
+        };
+
+        float proximity = Mathf.Clamp01(1f - distance / Mathf.Max(1f, searchRadius)) * 12f;
+        float finishValue = (1f - monster.HPPercent) * 7f;
+        float objectiveThreat = monster.GuardPillar != null ? 5f : 0f;
+        return threat + proximity + finishValue + objectiveThreat;
+    }
+
+    private void EvaluateUtilityActions()
+    {
+        targetExperience = PickBestExperienceTarget(out float xpScore);
+        targetObjective = CapturePillarManager.Instance != null
+            ? CapturePillarManager.Instance.FindClosestCaptured(transform.position)
+            : null;
+
+        float combatScore = ScoreCombatAction() * combatWeight;
+        float experienceScore = xpScore * experienceWeight;
+        float objectiveScore = ScoreObjectiveAction(targetObjective) * objectiveWeight;
+        float idleScore = 1f;
+
+        combatScore += currentAction == HeroUtilityAction.Combat ? currentActionInertia : 0f;
+        experienceScore += currentAction == HeroUtilityAction.CollectExperience ? currentActionInertia : 0f;
+        objectiveScore += currentAction == HeroUtilityAction.AttackObjective ? currentActionInertia : 0f;
+        idleScore += currentAction == HeroUtilityAction.Idle ? currentActionInertia : 0f;
+
+        HeroUtilityAction bestAction = HeroUtilityAction.Idle;
+        float bestScore = idleScore;
+
+        ConsiderUtilityCandidate(HeroUtilityAction.Combat, combatScore, ref bestAction, ref bestScore);
+        ConsiderUtilityCandidate(HeroUtilityAction.CollectExperience, experienceScore, ref bestAction, ref bestScore);
+        ConsiderUtilityCandidate(HeroUtilityAction.AttackObjective, objectiveScore, ref bestAction, ref bestScore);
+
+        bool currentInvalid = !IsCurrentActionValid();
+        bool commitmentExpired = Time.time >= actionCommittedUntil;
+        bool clearlyBetter = bestScore >= currentActionScore + actionSwitchThreshold;
+
+        if (bestAction != currentAction && (currentInvalid || (commitmentExpired && clearlyBetter)))
+        {
+            currentAction = bestAction;
+            currentActionScore = bestScore;
+            actionCommittedUntil = Time.time + Mathf.Max(0f, minimumActionCommitment);
+        }
+        else
+        {
+            currentActionScore = ScoreAction(currentAction, combatScore, experienceScore, objectiveScore, idleScore);
+        }
+    }
+
+    private static void ConsiderUtilityCandidate(
+        HeroUtilityAction candidate,
+        float score,
+        ref HeroUtilityAction bestAction,
+        ref float bestScore)
+    {
+        if (score <= bestScore) return;
+        bestScore = score;
+        bestAction = candidate;
+    }
+
+    private float ScoreAction(
+        HeroUtilityAction action,
+        float combatScore,
+        float experienceScore,
+        float objectiveScore,
+        float idleScore)
+    {
+        return action switch
+        {
+            HeroUtilityAction.Combat => combatScore,
+            HeroUtilityAction.CollectExperience => experienceScore,
+            HeroUtilityAction.AttackObjective => objectiveScore,
+            _ => idleScore
+        };
+    }
+
+    private float ScoreCombatAction()
+    {
+        if (targetMonster == null || !targetMonster.IsAlive) return 0f;
+
+        float distance = FlatDistance(transform.position, targetMonster.transform.position);
+        float hpRatio = currentHP / Mathf.Max(1f, maxHP);
+        float immediateThreat = Mathf.Clamp01(1f - distance / 9f);
+        float score = 28f + immediateThreat * 28f;
+
+        if (targetMonster.role == MonsterRole.Assassin) score += 10f;
+        if (targetMonster.role == MonsterRole.Mage) score += 7f;
+        if (hpRatio < 0.35f) score += immediateThreat * 15f;
+
+        return score;
+    }
+
+    private ExperienceOrb PickBestExperienceTarget(out float bestUtility)
+    {
+        ExperienceOrb best = null;
+        bestUtility = 0f;
+
+        float need = Mathf.Clamp01(1f - Experience / Mathf.Max(1f, ExperienceToNext));
+        float closeToLevel = 1f - need;
+        float hpRatio = currentHP / Mathf.Max(1f, maxHP);
+
+        foreach (ExperienceOrb orb in ExperienceOrb.Active)
+        {
+            if (orb == null || orb.IsCollected) continue;
+
+            float distance = FlatDistance(transform.position, orb.transform.position);
+            if (distance > xpSeekRadius) continue;
+
+            float distanceUtility = Mathf.Clamp01(1f - distance / Mathf.Max(1f, xpSeekRadius));
+            float valueUtility = Mathf.Clamp01(orb.value / 8f);
+            float dangerPenalty = CountNearbyMonsters(orb.transform.position, 4f) * 5f;
+            float lowHealthPenalty = hpRatio < 0.3f ? (0.3f - hpRatio) * 35f : 0f;
+
+            float utility =
+                12f +
+                distanceUtility * 24f +
+                valueUtility * 18f +
+                closeToLevel * xpLevelUrgencyWeight -
+                dangerPenalty -
+                lowHealthPenalty;
+
+            if (orb == targetExperience) utility += 5f;
+
+            if (utility > bestUtility)
+            {
+                bestUtility = utility;
+                best = orb;
+            }
+        }
+
+        return best;
+    }
+
+    private int CountNearbyMonsters(Vector3 point, float radius)
+    {
+        int count = 0;
+        float radiusSqr = radius * radius;
+        foreach (MonsterAI monster in MonsterAI.ActiveMonsters)
+        {
+            if (monster == null || !monster.IsAlive) continue;
+            Vector3 delta = monster.transform.position - point;
+            delta.y = 0f;
+            if (delta.sqrMagnitude <= radiusSqr) count++;
+        }
+        return count;
+    }
+
+    private float ScoreObjectiveAction(CapturePillar objective)
+    {
+        if (objective == null) return 0f;
+        float distance = FlatDistance(transform.position, objective.transform.position);
+        return 18f + Mathf.Clamp01(1f - distance / 28f) * 20f;
+    }
+
+    private bool IsCurrentActionValid()
+    {
+        return currentAction switch
+        {
+            HeroUtilityAction.Combat => targetMonster != null && targetMonster.IsAlive,
+            HeroUtilityAction.CollectExperience => targetExperience != null && !targetExperience.IsCollected,
+            HeroUtilityAction.AttackObjective => targetObjective != null,
+            _ => true
+        };
+    }
+
+    private void ExecuteCurrentAction()
+    {
+        switch (currentAction)
+        {
+            case HeroUtilityAction.Combat:
+                ExecuteCombatAction();
+                break;
+            case HeroUtilityAction.CollectExperience:
+                ExecuteExperienceAction();
+                break;
+            case HeroUtilityAction.AttackObjective:
+                ExecuteObjectiveAction();
+                break;
+            default:
+                StopMoving();
+                break;
+        }
+    }
+
+    private void ExecuteCombatAction()
+    {
+        if (targetMonster == null || !targetMonster.IsAlive)
+        {
+            StopMoving();
+            return;
+        }
+
+        float distance = FlatDistance(transform.position, targetMonster.transform.position);
+        if (distance > attackRange)
+        {
+            MoveTo(targetMonster.transform.position);
+            return;
+        }
+
+        StopMoving();
+        Face(targetMonster.transform.position);
+        if (attackTimer <= 0f) AttackTarget();
+    }
+
+    private void ExecuteExperienceAction()
+    {
+        if (targetExperience == null || targetExperience.IsCollected)
+        {
+            StopMoving();
+            return;
+        }
+
+        float pickupRadius =
+            basePickupRadius *
+            (1f + 0.2f * upgradeStacks[(int)HeroUpgradeType.PickupRange]);
+
+        if (FlatDistance(transform.position, targetExperience.transform.position) <= pickupRadius)
+        {
+            targetExperience.Collect(this);
+            targetExperience = null;
+            nextDecisionAt = 0f;
+            return;
+        }
+
+        MoveTo(targetExperience.transform.position, Mathf.Max(0.2f, pickupRadius * 0.65f));
+    }
+
+    private void ExecuteObjectiveAction()
+    {
+        if (targetObjective == null)
+        {
+            StopMoving();
+            return;
+        }
+
+        MoveTo(targetObjective.transform.position);
     }
 
     private void CollectExperienceInPickupRadius()
@@ -493,12 +748,12 @@ public class HeroBotAI : MonoBehaviour
         return false;
     }
 
-    private void MoveTo(Vector3 destination)
+    private void MoveTo(Vector3 destination, float stoppingDistance = -1f)
     {
         if (agent == null || !agent.enabled || !agent.isOnNavMesh) return;
         float speedBonus = 1f + 0.06f * upgradeStacks[(int)HeroUpgradeType.MoveSpeed];
         agent.speed = moveSpeed * speedBonus;
-        agent.stoppingDistance = attackRange * 0.8f;
+        agent.stoppingDistance = stoppingDistance >= 0f ? stoppingDistance : attackRange * 0.8f;
         agent.isStopped = false;
         agent.SetDestination(destination);
         SetSpeed(agent.speed);
