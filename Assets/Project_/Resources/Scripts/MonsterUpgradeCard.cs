@@ -39,16 +39,21 @@ public class MonsterUpgradeCard : MonoBehaviour
         int p = upgrades.PowerLevel(slot), a = upgrades.AutoLevel(slot);
         if (title != null) title.text = d.displayName;
         if (icon != null) icon.sprite = d.icon;
-        if (stats != null) stats.text = $"HP +{d.healthPerLevel * p:P0}   ATK +{d.damagePerLevel * p:P0}";
-        if (powerLabel != null) powerLabel.text = p >= d.maxPowerLevel ? $"POWER {p}/{d.maxPowerLevel}  MAX" :
-            $"POWER {p}/{d.maxPowerLevel}  |  {HeroDoomGameManager.FormatNumber(d.PowerCost(p))} G";
-        if (autoLabel != null) autoLabel.text = a >= d.maxAutoLevel ? $"AUTO {a}/{d.maxAutoLevel}  MAX" :
-            $"AUTO {a}/{d.maxAutoLevel}  |  {HeroDoomGameManager.FormatNumber(d.AutoCost(a))} G";
+        int alive = upgrades.AliveCount(slot);
+        double summonCost = upgrades.spawner != null ? upgrades.spawner.GetCost(slot) : 0d;
+        if (stats != null) stats.text =
+            $"SUMMON {HeroDoomGameManager.FormatNumber(summonCost)} G   FIELD {alive}/{d.maxAlive}\n" +
+            $"HP +{d.healthPerLevel * p:P0}   ATK +{d.damagePerLevel * p:P0}";
+        if (powerLabel != null) powerLabel.text = p >= d.maxPowerLevel ? $"POWER Lv.{p}/{d.maxPowerLevel}  MAX" :
+            $"POWER Lv.{p}/{d.maxPowerLevel}  |  {HeroDoomGameManager.FormatNumber(d.PowerCost(p))} G";
+        if (autoLabel != null) autoLabel.text = a >= d.maxAutoLevel ? $"AUTO Lv.{a}/{d.maxAutoLevel}  MAX" :
+            $"AUTO Lv.{a}/{d.maxAutoLevel}  |  {HeroDoomGameManager.FormatNumber(d.AutoCost(a))} G";
         if (autoStatus != null)
         {
             if (!upgrades.IsAutoUnlocked(slot)) autoStatus.text = $"Requires {upgrades.definitions[slot - 1].displayName} AUTO {d.previousMonsterAutoLevelRequired}";
             else if (a == 0) autoStatus.text = $"Unlock: one summon / {d.startingInterval:0}s";
-            else if (!upgrades.CanSpawn(slot)) autoStatus.text = "Army limit reached - waiting";
+            else if (upgrades.IsGlobalArmyFull) autoStatus.text = $"Army full {MonsterAI.ActiveMonsters.Count}/{upgrades.maxAliveMonsters} - waiting";
+            else if (alive >= d.maxAlive) autoStatus.text = $"{d.displayName} cap {alive}/{d.maxAlive} - waiting";
             else autoStatus.text = $"Next {upgrades.Remaining(slot):0.0}s  |  Every {d.Interval(a):0.0}s";
         }
         if (progress != null) progress.fillAmount = a == 0 ? 0 : 1 - Mathf.Clamp01(upgrades.Remaining(slot) / d.Interval(a));
