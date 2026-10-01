@@ -11,6 +11,16 @@ public enum MonsterRole
     Assassin
 }
 
+public enum MonsterUtilityAction
+{
+    Idle,
+    Advance,
+    Attack,
+    Retreat,
+    MageSpecial,
+    ReturnToGuard
+}
+
 public class MonsterAI : MonoBehaviour
 {
     public static readonly HashSet<MonsterAI> ActiveMonsters = new();
@@ -50,6 +60,12 @@ public class MonsterAI : MonoBehaviour
     public SpawnProtection spawnProtection;
     public CombatKnockback knockbackMotor;
 
+    [Header("Utility AI")]
+    [Min(0.05f)] public float decisionInterval = 0.22f;
+    [Min(0f)] public float minimumActionCommitment = 0.45f;
+    [Min(0f)] public float actionSwitchThreshold = 6f;
+    [Min(0f)] public float currentActionInertia = 8f;
+
     [Header("Combat Feel")]
     public float rotationSpeed = 12f;
     public float knockbackForce = 0.7f;
@@ -77,6 +93,10 @@ public class MonsterAI : MonoBehaviour
     private float nextPathUpdate;
     private Vector3 lastDestination;
     private NavMeshPath retreatPath;
+    [SerializeField] private MonsterUtilityAction currentUtilityAction = MonsterUtilityAction.Idle;
+    [SerializeField] private float currentUtilityScore;
+    private float nextDecisionAt;
+    private float actionCommittedUntil;
 
     void Awake()
     {
@@ -163,13 +183,270 @@ public class MonsterAI : MonoBehaviour
 
         if (!TryPlaceOnNavMesh()) return;
 
-        if (GuardPillar != null)
+        if (Time.time >= nextDecisionAt || !IsCurrentUtilityActionValid())
         {
-            HandleGuardBehaviour();
+            EvaluateUtilityAction();
+            nextDecisionAt = Time.time + Mathf.Max(0.05f, decisionInterval);
+        }
+
+        ExecuteUtilityAction();
+    }
+
+    private void EvaluateUtilityAction()
+    {
+        float distance = FlatDistance(transform.position, heroTarget.transform.position);
+
+        float attackScore = ScoreAttack(distance);
+        float advanceScore = ScoreAdvance(distance);
+        float retreatScore = ScoreRetreat(distance);
+        float specialScore = ScoreMageSpecial(distance);
+        float guardScore = ScoreReturnToGuard();
+        float idleScore = 1f;
+
+        attackScore += currentUtilityAction == MonsterUtilityAction.Attack ? currentActionInertia : 0f;
+        advanceScore += currentUtilityAction == MonsterUtilityAction.Advance ? currentActionInertia : 0f;
+        retreatScore += currentUtilityAction == MonsterUtilityAction.Retreat ? currentActionInertia : 0f;
+        specialScore += currentUtilityAction == MonsterUtilityAction.MageSpecial ? currentActionInertia : 0f;
+        guardScore += currentUtilityAction == MonsterUtilityAction.ReturnToGuard ? currentActionInertia : 0f;
+        idleScore += currentUtilityAction == MonsterUtilityAction.Idle ? currentActionInertia : 0f;
+
+        MonsterUtilityAction bestAction = MonsterUtilityAction.Idle;
+        float bestScore = idleScore;
+        ConsiderUtilityCandidate(MonsterUtilityAction.Advance, advanceScore, ref bestAction, ref bestScore);
+        ConsiderUtilityCandidate(MonsterUtilityAction.Attack, attackScore, ref bestAction, ref bestScore);
+        ConsiderUtilityCandidate(MonsterUtilityAction.Retreat, retreatScore, ref bestAction, ref bestScore);
+        ConsiderUtilityCandidate(MonsterUtilityAction.MageSpecial, specialScore, ref bestAction, ref bestScore);
+        ConsiderUtilityCandidate(MonsterUtilityAction.ReturnToGuard, guardScore, ref bestAction, ref bestScore);
+
+        bool currentInvalid = !IsCurrentUtilityActionValid();
+        bool commitmentExpired = Time.time >= actionCommittedUntil;
+        bool clearlyBetter = bestScore >= currentUtilityScore + actionSwitchThreshold;
+        bool emergency = bestScore >= 90f;
+
+        if (bestAction != currentUtilityAction &&
+            (currentInvalid || emergency || (commitmentExpired && clearlyBetter)))
+        {
+            currentUtilityAction = bestAction;
+            currentUtilityScore = bestScore;
+            actionCommittedUntil = Time.time + Mathf.Max(0f, minimumActionCommitment);
+        }
+        else
+        {
+            currentUtilityScore = UtilityScoreFor(
+                currentUtilityAction,
+                advanceScore,
+                attackScore,
+                retreatScore,
+                specialScore,
+                guardScore,
+                idleScore);
+        }
+    }
+
+    private static void ConsiderUtilityCandidate(
+        MonsterUtilityAction candidate,
+        float score,
+        ref MonsterUtilityAction bestAction,
+        ref float bestScore)
+    {
+        if (score <= bestScore) return;
+        bestScore = score;
+        bestAction = candidate;
+    }
+
+    private float UtilityScoreFor(
+        MonsterUtilityAction action,
+        float advance,
+        float attack,
+        float retreat,
+        float special,
+        float guard,
+        float idle)
+    {
+        return action switch
+        {
+            MonsterUtilityAction.Advance => advance,
+            MonsterUtilityAction.Attack => attack,
+            MonsterUtilityAction.Retreat => retreat,
+            MonsterUtilityAction.MageSpecial => special,
+            MonsterUtilityAction.ReturnToGuard => guard,
+            _ => idle
+        };
+    }
+
+    private bool HeroIsRelevantToGuardZone(float distance)
+    {
+        if (GuardPillar == null) return true;
+        float engagePadding = role == MonsterRole.Mage ? preferredRange + 1f : attackRange + 2f;
+        return GuardPillar.IsInside(heroTarget.transform.position, attackRange + 1.5f) &&
+               distance <= Mathf.Max(attackRange, engagePadding);
+    }
+
+    private float ScoreAttack(float distance)
+    {
+        if (!HeroIsRelevantToGuardZone(distance) || distance > attackRange) return 0f;
+
+        float score = 58f + (1f - Mathf.Clamp01(distance / Mathf.Max(0.1f, attackRange))) * 16f;
+        float heroHp = heroTarget.CurrentHP / Mathf.Max(1f, heroTarget.MaxHP);
+
+        if (role == MonsterRole.Assassin) score += (1f - heroHp) * 20f;
+        if (role == MonsterRole.Tank) score += 7f;
+        if (role == MonsterRole.Mage) score -= 7f;
+
+        return score;
+    }
+
+    private float ScoreAdvance(float distance)
+    {
+        if (!HeroIsRelevantToGuardZone(distance)) return 0f;
+
+        float desiredRange = role == MonsterRole.Mage
+            ? Mathf.Min(preferredRange, attackRange)
+            : attackRange;
+
+        if (distance <= desiredRange) return 0f;
+
+        float normalizedDistance = Mathf.Clamp01(distance / 18f);
+        float score = 34f + normalizedDistance * 18f;
+
+        if (role == MonsterRole.Assassin) score += 12f;
+        if (role == MonsterRole.Tank) score += 4f;
+        if (role == MonsterRole.Mage) score += 5f;
+
+        return score;
+    }
+
+    private float ScoreRetreat(float distance)
+    {
+        if (role != MonsterRole.Mage || Time.time < nextRetreatAt) return 0f;
+        if (!HeroIsRelevantToGuardZone(distance) || distance >= retreatRange) return 0f;
+
+        float closeness = 1f - Mathf.Clamp01(distance / Mathf.Max(0.1f, retreatRange));
+        float lowHealth = 1f - HPPercent;
+        return 68f + closeness * 24f + lowHealth * 12f;
+    }
+
+    private float ScoreMageSpecial(float distance)
+    {
+        if (role != MonsterRole.Mage || specialTimer > 0f) return 0f;
+        if (!HeroIsRelevantToGuardZone(distance) || distance > attackRange + 1.5f) return 0f;
+
+        float lowHealth = 1f - HPPercent;
+        float proximity = 1f - Mathf.Clamp01(distance / Mathf.Max(0.1f, attackRange + 1.5f));
+        return 52f + lowHealth * 26f + proximity * 12f;
+    }
+
+    private float ScoreReturnToGuard()
+    {
+        if (GuardPillar == null) return 0f;
+
+        float distanceFromCenter = FlatDistance(transform.position, GuardPillar.transform.position);
+        float desiredRadius = Mathf.Max(0.8f, GuardPillar.captureRadius * 0.55f);
+        float heroDistance = FlatDistance(transform.position, heroTarget.transform.position);
+
+        if (HeroIsRelevantToGuardZone(heroDistance) && distanceFromCenter <= desiredRadius)
+            return 0f;
+
+        float outside = Mathf.Clamp01((distanceFromCenter - desiredRadius) / Mathf.Max(1f, GuardPillar.captureRadius));
+        return 62f + outside * 22f;
+    }
+
+    private bool IsCurrentUtilityActionValid()
+    {
+        if (heroTarget == null || !heroTarget.IsAlive) return false;
+
+        float distance = FlatDistance(transform.position, heroTarget.transform.position);
+        return currentUtilityAction switch
+        {
+            MonsterUtilityAction.Advance => ScoreAdvance(distance) > 0f,
+            MonsterUtilityAction.Attack => ScoreAttack(distance) > 0f,
+            MonsterUtilityAction.Retreat => ScoreRetreat(distance) > 0f || retreating,
+            MonsterUtilityAction.MageSpecial => ScoreMageSpecial(distance) > 0f,
+            MonsterUtilityAction.ReturnToGuard => ScoreReturnToGuard() > 0f,
+            _ => true
+        };
+    }
+
+    private void ExecuteUtilityAction()
+    {
+        float distance = FlatDistance(transform.position, heroTarget.transform.position);
+
+        switch (currentUtilityAction)
+        {
+            case MonsterUtilityAction.Attack:
+                StopMoving();
+                Face(heroTarget.transform.position);
+                if (attackTimer <= 0f) AttackHero(role == MonsterRole.Tank);
+                break;
+
+            case MonsterUtilityAction.Advance:
+            {
+                Vector3 destination = heroTarget.transform.position;
+                if (GuardPillar != null) destination = ClampToGuardZone(destination);
+                float stoppingDistance = role == MonsterRole.Mage
+                    ? Mathf.Max(0.2f, Mathf.Min(preferredRange, attackRange) - 0.25f)
+                    : Mathf.Max(0.2f, attackRange * 0.8f);
+                MoveTo(destination, stoppingDistance);
+                break;
+            }
+
+            case MonsterUtilityAction.Retreat:
+                ExecuteRetreatAction(distance);
+                break;
+
+            case MonsterUtilityAction.MageSpecial:
+                StopMoving();
+                Face(heroTarget.transform.position);
+                CastMageSpecial();
+                attackTimer = Mathf.Max(attackTimer, castStandTime);
+                castEndsAt = Time.time + castStandTime;
+                nextDecisionAt = 0f;
+                break;
+
+            case MonsterUtilityAction.ReturnToGuard:
+                if (GuardPillar != null) MoveTo(GuardPillar.transform.position, 0.35f);
+                else StopMoving();
+                break;
+
+            default:
+                StopMoving();
+                break;
+        }
+    }
+
+    private void ExecuteRetreatAction(float distance)
+    {
+        if (role != MonsterRole.Mage)
+        {
+            StopMoving();
             return;
         }
 
-        HandleRoleBehaviour();
+        if (!retreating)
+        {
+            nextRetreatAt = Time.time + retreatDuration + retreatCooldown;
+            if (TryChooseRetreatPoint(out retreatDestination))
+            {
+                retreating = true;
+                retreatEndsAt = Time.time + retreatDuration;
+            }
+            else
+            {
+                currentUtilityAction = MonsterUtilityAction.Attack;
+                nextDecisionAt = 0f;
+                return;
+            }
+        }
+
+        if (Time.time < retreatEndsAt && FlatDistance(transform.position, retreatDestination) > 0.35f)
+        {
+            MoveTo(retreatDestination, 0.15f);
+            return;
+        }
+
+        retreating = false;
+        nextDecisionAt = 0f;
+        StopMoving();
     }
 
     private void HandleRoleBehaviour()
