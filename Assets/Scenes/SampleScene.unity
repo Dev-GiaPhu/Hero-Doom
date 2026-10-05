@@ -13557,14 +13557,6 @@ PrefabInstance:
       propertyPath: m_Name
       value: Spawn Protection Ring
       objectReference: {fileID: 0}
-    - target: {fileID: 6521575917597568206, guid: e2e51941bfbda3c41868694e7435857d, type: 3}
-      propertyPath: m_SortingOrder
-      value: 220
-      objectReference: {fileID: 0}
-    - target: {fileID: 6521575917597568206, guid: e2e51941bfbda3c41868694e7435857d, type: 3}
-      propertyPath: 'm_Materials.Array.data[0]'
-      value: 
-      objectReference: {fileID: 2100000, guid: 61409597b623b7b4cb832ec296066750, type: 2}
     - target: {fileID: 9019605628761133995, guid: e2e51941bfbda3c41868694e7435857d, type: 3}
       propertyPath: m_LocalScale.x
       value: 3
@@ -14146,7 +14138,7 @@ GameObject:
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
-  m_IsActive: 1
+  m_IsActive: 0
 --- !u!224 &1682951493
 RectTransform:
   m_ObjectHideFlags: 0
