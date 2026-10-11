@@ -33,11 +33,18 @@ public sealed class GameAudioController : MonoBehaviour
     [Range(0f, 1f)] public float combatVolume = .48f;
     [Range(0f, 1f)] public float rewardVolume = .62f;
 
+    [Header("Gold Collection")]
+    [Tooltip("Optional short gold pickup sound. Falls back to the UI click clip.")]
+    public AudioClip goldPickupSound;
+    [Range(0f, 1f)] public float goldPickupVolume = .25f;
+    [Range(.05f, .5f)] public float goldPickupCooldown = .16f;
+
     [Header("Combat Sound Density")]
     [Range(.02f, .4f)] public float meleeCooldown = .08f;
     [Range(.02f, .5f)] public float magicCooldown = .13f;
     [Range(.02f, .5f)] public float deathCooldown = .09f;
 
+    private float nextGoldPickupAt;
     private float nextMeleeAt;
     private float nextMagicAt;
     private float nextDeathAt;
@@ -169,6 +176,13 @@ public sealed class GameAudioController : MonoBehaviour
     public void PlayNoMoney() => Play(noMoneySound, uiVolume);
     public void PlaySummon() => Play(summonSound, combatVolume);
     public void PlayReward() => Play(rewardSound, rewardVolume);
+
+    public void PlayGoldPickup()
+    {
+        if (Time.unscaledTime < nextGoldPickupAt) return;
+        nextGoldPickupAt = Time.unscaledTime + Mathf.Max(.05f, goldPickupCooldown);
+        Play(goldPickupSound != null ? goldPickupSound : clickSound, goldPickupVolume);
+    }
 
     public void PlayMeleeHit()
     {

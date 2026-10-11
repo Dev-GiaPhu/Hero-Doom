@@ -19,7 +19,9 @@ public enum MonsterUtilityAction
     Attack,
     Retreat,
     MageSpecial,
-    ReturnToGuard
+    ReturnToGuard,
+    CollectGold,
+    MineGold
 }
 
 public class MonsterAI : MonoBehaviour
@@ -80,6 +82,26 @@ public class MonsterAI : MonoBehaviour
     [Tooltip("Extra aggression when allies are already pressuring the Hero.")]
     [Range(0f, 2f)] public float teamPressureWeight = 1f;
 
+    [Header("Autonomous Gold Economy")]
+    [Tooltip("Cho phép quái tự đi nhặt vàng và khai thác, cả khi Hero đang chết.")]
+    public bool canGatherGold = true;
+    [Tooltip("Độ ưu tiên kinh tế của loại quái này. Tank nên thấp, Basic nên cao.")]
+    [Range(0f, 2.5f)] public float economicMotivation = 1f;
+    [Tooltip("Hero ở trong vùng này sẽ bị xem như nguy hiểm / vật cản.")]
+    [Min(1f)] public float heroInterventionRadius = 10f;
+    [Tooltip("Khoảng cách tối đa AI tìm mỏ và đồng vàng.")]
+    [Min(4f)] public float economicSearchRadius = 35f;
+    [Tooltip("Vàng trong ví ít hơn ngưỡng này khiến AI kiếm tiền tích cực hơn.")]
+    [Min(1f)] public float lowGoldThreshold = 300f;
+    [Tooltip("Độ ưu tiên cắt ngang mining khi Hero đến gần. Cao hơn = sẵn sàng đánh.")]
+    [Range(0f, 3f)] public float defensiveAggression = 1f;
+    [Tooltip("Khoảng thời gian thực hiện một lượt khai thác. 0 = dùng workDuration của mỏ.")]
+    [Min(0f)] public float customWorkInterval = 0f;
+    [Tooltip("Bán kính quái tự nhặt vàng đang ở ngay bên cạnh mà không cần pathfind.")]
+    [Range(0.5f, 3f)] public float goldAutoPickupRadius = 1.35f;
+    [Tooltip("Khoảng thời gian quét nhanh vàng sát chân.")]
+    [Range(0.05f, 0.5f)] public float goldAutoPickupInterval = .14f;
+
     [Header("Combat Feel")]
     public float rotationSpeed = 12f;
     public float knockbackForce = 0.7f;
@@ -117,6 +139,12 @@ public class MonsterAI : MonoBehaviour
     private float actionCommittedUntil;
     private Vector3 lastHeroPosition;
     private Vector3 heroVelocityEstimate;
+    private GoldMine targetGoldMine;
+    private GoldPickup targetGoldPickup;
+    private float miningProgress;
+    private float nextGoldPickupAt;
+    private readonly NavMeshPath economicPath = new NavMeshPath();
+    public GoldMine AssignedGoldMine => targetGoldMine;
 
     void Awake()
     {
@@ -133,6 +161,7 @@ public class MonsterAI : MonoBehaviour
     void OnDisable()
     {
         ActiveMonsters.Remove(this);
+        ReleaseGoldTasks();
         if (GuardPillar != null) GuardPillar.UnregisterGuard(this);
     }
 
@@ -181,28 +210,47 @@ public class MonsterAI : MonoBehaviour
         specialTimer -= Time.deltaTime;
 
         if (heroTarget == null || !heroTarget.IsAlive)
-            heroTarget = HeroDoomGameManager.Instance != null ? HeroDoomGameManager.Instance.CurrentHero : FindFirstObjectByType<HeroBotAI>();
-
-        if (heroTarget == null || !heroTarget.IsAlive)
         {
-            StopMoving();
-            return;
+            HeroBotAI livingHero = HeroDoomGameManager.Instance != null
+                ? HeroDoomGameManager.Instance.CurrentHero
+                : null;
+            if (livingHero != null && livingHero.IsAlive)
+            {
+                heroTarget = livingHero;
+                lastHeroPosition = heroTarget.transform.position;
+                heroVelocityEstimate = Vector3.zero;
+                nextDecisionAt = 0f;
+            }
+            else
+                heroTarget = null;
         }
 
         if (!TryPlaceOnNavMesh()) return;
-        UpdateHeroPrediction();
 
+        if (Time.time >= nextGoldPickupAt)
+        {
+            nextGoldPickupAt = Time.time + Mathf.Max(.05f, goldAutoPickupInterval);
+            CollectGoldAtFeet();
+        }
+
+        if (heroTarget != null) UpdateHeroPrediction();
+
+        // Direct F-control always overrides economic planning, while manual walking
+        // still collects coins that happen to be under the monster.
         if (IsPlayerControlled)
         {
-            float heroDistance = FlatDistance(transform.position, heroTarget.transform.position);
-            if (heroDistance <= attackRange && attackTimer <= 0f)
+            if (targetGoldMine != null || targetGoldPickup != null) ReleaseGoldTasks();
+
+            if (heroTarget != null && heroTarget.IsAlive &&
+                FlatDistance(transform.position, heroTarget.transform.position) <= attackRange &&
+                attackTimer <= 0f)
             {
                 StopMoving();
                 Face(heroTarget.transform.position);
                 AttackHero(role == MonsterRole.Tank);
             }
-            else if (hasPlayerMoveTarget && FlatDistance(transform.position, playerMoveTarget) > 0.55f)
-                MoveTo(playerMoveTarget, 0.35f);
+            else if (hasPlayerMoveTarget && FlatDistance(transform.position, playerMoveTarget) > .55f)
+                MoveTo(playerMoveTarget, .35f);
             else
             {
                 hasPlayerMoveTarget = false;
@@ -214,7 +262,7 @@ public class MonsterAI : MonoBehaviour
         if (Time.time >= nextDecisionAt || !IsCurrentUtilityActionValid())
         {
             EvaluateUtilityAction();
-            nextDecisionAt = Time.time + Mathf.Max(0.05f, decisionInterval);
+            nextDecisionAt = Time.time + Mathf.Max(.05f, decisionInterval);
         }
 
         ExecuteUtilityAction();
@@ -235,53 +283,224 @@ public class MonsterAI : MonoBehaviour
     }
     private void EvaluateUtilityAction()
     {
-        float distance = FlatDistance(transform.position, heroTarget.transform.position);
+        bool heroPresent = heroTarget != null && heroTarget.IsAlive;
+        float distance = heroPresent
+            ? FlatDistance(transform.position, heroTarget.transform.position)
+            : float.PositiveInfinity;
+        bool heroThreatensThisUnit = heroPresent &&
+                                    distance <= heroInterventionRadius;
 
-        float attackScore = ScoreAttack(distance);
-        float advanceScore = ScoreAdvance(distance);
-        float retreatScore = ScoreRetreat(distance);
-        float specialScore = ScoreMageSpecial(distance);
+        float attackScore = heroPresent ? ScoreAttack(distance) : 0f;
+        float advanceScore = heroPresent ? ScoreAdvance(distance) : 0f;
+        float retreatScore = heroPresent ? ScoreRetreat(distance) : 0f;
+        float specialScore = heroPresent ? ScoreMageSpecial(distance) : 0f;
         float guardScore = ScoreReturnToGuard();
         float idleScore = 1f;
+
+        // Hero is an obstacle, not the only objective. Long-distance chases stop
+        // when a mine or ground gold can generate more meaningful progress.
+        if (!heroThreatensThisUnit)
+        {
+            attackScore = 0f;
+            retreatScore = 0f;
+            specialScore = 0f;
+            advanceScore *= .3f;
+        }
+        else
+        {
+            float danger = Mathf.Clamp01(1f - distance / Mathf.Max(1f, heroInterventionRadius));
+            attackScore += danger * 22f * defensiveAggression;
+            advanceScore += danger * 18f * defensiveAggression;
+            specialScore += danger * 16f * defensiveAggression;
+        }
+
+        // Guards never desert their pillar for money.
+        if (GuardPillar != null)
+        {
+            if (!HeroIsRelevantToGuardZone(distance))
+            {
+                attackScore = 0f;
+                advanceScore = 0f;
+                retreatScore = 0f;
+                specialScore = 0f;
+                guardScore = Mathf.Max(guardScore, 16f);
+            }
+        }
+
+        GoldPickup candidateCoin = null;
+        GoldMine candidateMine = null;
+        float collectScore = 0f;
+        float mineScore = 0f;
+
+        if (canGatherGold && economicMotivation > 0f && GuardPillar == null)
+        {
+            float urgency = 1f;
+            HeroDoomGameManager game = HeroDoomGameManager.Instance;
+            if (game != null)
+                urgency += .42f * Mathf.Clamp01(
+                    (lowGoldThreshold - (float)System.Math.Min(game.Gold, lowGoldThreshold)) /
+                    Mathf.Max(1f, lowGoldThreshold));
+
+            foreach (GoldPickup coin in GoldPickup.Active)
+            {
+                if (coin == null || !coin.CanClaim(this)) continue;
+                float d = FlatDistance(transform.position, coin.transform.position);
+                if (d > economicSearchRadius) continue;
+                float score = (72f + Mathf.Clamp((float)coin.goldValue, 0f, 25f) * .22f -
+                              d * 1.65f) * economicMotivation * urgency;
+                if (coin == targetGoldPickup) score += 13f;
+                if (heroThreatensThisUnit) score -= 20f * defensiveAggression;
+                if (score > collectScore)
+                {
+                    collectScore = score;
+                    candidateCoin = coin;
+                }
+            }
+
+            foreach (GoldMine mine in GoldMine.Active)
+            {
+                if (mine == null || !mine.CanWork(this)) continue;
+                float d = FlatDistance(transform.position, mine.transform.position);
+                if (d > economicSearchRadius) continue;
+                float workers = Mathf.Max(1, mine.WorkerCount + (targetGoldMine == mine ? 0 : 1));
+                float yieldRate = (float)(mine.goldPerWork / Mathf.Max(.4f, mine.workDuration));
+                float score = (55f + Mathf.Clamp(yieldRate * 1.1f, 0f, 25f) -
+                              d * 1.25f - workers * 2f) * economicMotivation * urgency;
+                if (mine == targetGoldMine) score += 13f;
+                if (heroThreatensThisUnit) score -= 17f * defensiveAggression;
+                if (score > mineScore)
+                {
+                    mineScore = score;
+                    candidateMine = mine;
+                }
+            }
+        }
+
+        if (heroThreatensThisUnit)
+        {
+            // Never ignore a nearby, immediately lethal attacker to pick up a coin.
+            float emergencyDistance = Mathf.Max(4.5f, attackRange + 2f);
+            if (distance < emergencyDistance)
+            {
+                collectScore *= .24f;
+                mineScore *= .15f;
+            }
+        }
+
+        // At most two path checks per unit per decision, rather than one for
+        // every pickup/deposit on every frame.
+        if (candidateCoin != null && !HasEconomicPath(candidateCoin.transform.position))
+        {
+            candidateCoin = null;
+            collectScore = 0f;
+        }
+        if (candidateMine != null && !HasEconomicPath(candidateMine.transform.position))
+        {
+            candidateMine = null;
+            mineScore = 0f;
+        }
+
+        if (GuardPillar != null)
+        {
+            collectScore = 0f;
+            mineScore = 0f;
+        }
 
         attackScore += currentUtilityAction == MonsterUtilityAction.Attack ? currentActionInertia : 0f;
         advanceScore += currentUtilityAction == MonsterUtilityAction.Advance ? currentActionInertia : 0f;
         retreatScore += currentUtilityAction == MonsterUtilityAction.Retreat ? currentActionInertia : 0f;
         specialScore += currentUtilityAction == MonsterUtilityAction.MageSpecial ? currentActionInertia : 0f;
         guardScore += currentUtilityAction == MonsterUtilityAction.ReturnToGuard ? currentActionInertia : 0f;
-        idleScore += currentUtilityAction == MonsterUtilityAction.Idle ? currentActionInertia : 0f;
+        collectScore += currentUtilityAction == MonsterUtilityAction.CollectGold && candidateCoin != null
+            ? currentActionInertia : 0f;
+        mineScore += currentUtilityAction == MonsterUtilityAction.MineGold && candidateMine != null
+            ? currentActionInertia : 0f;
 
-        MonsterUtilityAction bestAction = MonsterUtilityAction.Idle;
+        MonsterUtilityAction best = MonsterUtilityAction.Idle;
         float bestScore = idleScore;
-        ConsiderUtilityCandidate(MonsterUtilityAction.Advance, advanceScore, ref bestAction, ref bestScore);
-        ConsiderUtilityCandidate(MonsterUtilityAction.Attack, attackScore, ref bestAction, ref bestScore);
-        ConsiderUtilityCandidate(MonsterUtilityAction.Retreat, retreatScore, ref bestAction, ref bestScore);
-        ConsiderUtilityCandidate(MonsterUtilityAction.MageSpecial, specialScore, ref bestAction, ref bestScore);
-        ConsiderUtilityCandidate(MonsterUtilityAction.ReturnToGuard, guardScore, ref bestAction, ref bestScore);
+        ConsiderUtilityCandidate(MonsterUtilityAction.Advance, advanceScore, ref best, ref bestScore);
+        ConsiderUtilityCandidate(MonsterUtilityAction.Attack, attackScore, ref best, ref bestScore);
+        ConsiderUtilityCandidate(MonsterUtilityAction.Retreat, retreatScore, ref best, ref bestScore);
+        ConsiderUtilityCandidate(MonsterUtilityAction.MageSpecial, specialScore, ref best, ref bestScore);
+        ConsiderUtilityCandidate(MonsterUtilityAction.ReturnToGuard, guardScore, ref best, ref bestScore);
+        ConsiderUtilityCandidate(MonsterUtilityAction.CollectGold, collectScore, ref best, ref bestScore);
+        ConsiderUtilityCandidate(MonsterUtilityAction.MineGold, mineScore, ref best, ref bestScore);
 
-        bool currentInvalid = !IsCurrentUtilityActionValid();
+        bool invalid = !IsCurrentUtilityActionValid();
         bool commitmentExpired = Time.time >= actionCommittedUntil;
-        bool clearlyBetter = bestScore >= currentUtilityScore + actionSwitchThreshold;
-        bool emergency = bestScore >= 90f;
+        bool significantGain = bestScore >= currentUtilityScore + actionSwitchThreshold;
+        bool urgentDefense = heroThreatensThisUnit &&
+                             best != MonsterUtilityAction.MineGold &&
+                             best != MonsterUtilityAction.CollectGold &&
+                             bestScore >= 82f;
 
-        if (bestAction != currentUtilityAction &&
-            (currentInvalid || emergency || (commitmentExpired && clearlyBetter)))
+        if (best != currentUtilityAction &&
+            (invalid || urgentDefense || (commitmentExpired && significantGain)))
         {
-            currentUtilityAction = bestAction;
+            currentUtilityAction = best;
             currentUtilityScore = bestScore;
             actionCommittedUntil = Time.time + Mathf.Max(0f, minimumActionCommitment);
         }
         else
         {
-            currentUtilityScore = UtilityScoreFor(
-                currentUtilityAction,
-                advanceScore,
-                attackScore,
-                retreatScore,
-                specialScore,
-                guardScore,
-                idleScore);
+            currentUtilityScore = ScoreAction(
+                currentUtilityAction, advanceScore, attackScore, retreatScore,
+                specialScore, guardScore, collectScore, mineScore, idleScore);
         }
+
+        if (currentUtilityAction == MonsterUtilityAction.CollectGold)
+        {
+            if (targetGoldMine != null) ReleaseMine();
+            if (candidateCoin != targetGoldPickup)
+            {
+                ReleasePickup();
+                if (candidateCoin != null && candidateCoin.TryClaim(this))
+                    targetGoldPickup = candidateCoin;
+                else
+                    nextDecisionAt = 0f;
+            }
+        }
+        else if (currentUtilityAction == MonsterUtilityAction.MineGold)
+        {
+            ReleasePickup();
+            if (candidateMine != targetGoldMine)
+            {
+                ReleaseMine();
+                if (candidateMine != null && candidateMine.Reserve(this))
+                {
+                    targetGoldMine = candidateMine;
+                    miningProgress = 0f;
+                }
+                else
+                    nextDecisionAt = 0f;
+            }
+        }
+        else
+            ReleaseGoldTasks();
+    }
+
+    private bool HasEconomicPath(Vector3 point)
+    {
+        if (agent == null || !agent.enabled || !agent.isOnNavMesh) return false;
+        return agent.CalculatePath(point, economicPath) &&
+               economicPath.status == NavMeshPathStatus.PathComplete;
+    }
+
+    private float ScoreAction(
+        MonsterUtilityAction action, float advance, float attack, float retreat,
+        float special, float guard, float collect, float mine, float idle)
+    {
+        return action switch
+        {
+            MonsterUtilityAction.Advance => advance,
+            MonsterUtilityAction.Attack => attack,
+            MonsterUtilityAction.Retreat => retreat,
+            MonsterUtilityAction.MageSpecial => special,
+            MonsterUtilityAction.ReturnToGuard => guard,
+            MonsterUtilityAction.CollectGold => collect,
+            MonsterUtilityAction.MineGold => mine,
+            _ => idle
+        };
     }
 
     private static void ConsiderUtilityCandidate(
@@ -317,6 +536,7 @@ public class MonsterAI : MonoBehaviour
 
     private bool HeroIsRelevantToGuardZone(float distance)
     {
+        if (heroTarget == null || !heroTarget.IsAlive) return false;
         if (GuardPillar == null) return true;
         float engagePadding = role == MonsterRole.Mage ? preferredRange + 1f : attackRange + 2f;
         return GuardPillar.IsInside(heroTarget.transform.position, attackRange + 1.5f) &&
@@ -325,7 +545,8 @@ public class MonsterAI : MonoBehaviour
 
     private float ScoreAttack(float distance)
     {
-        if (!HeroIsRelevantToGuardZone(distance) || distance > attackRange) return 0f;
+        if (heroTarget == null || !heroTarget.IsAlive ||
+            !HeroIsRelevantToGuardZone(distance) || distance > attackRange) return 0f;
 
         float score = 58f + (1f - Mathf.Clamp01(distance / Mathf.Max(0.1f, attackRange))) * 16f;
         float heroHp = heroTarget.CurrentHP / Mathf.Max(1f, heroTarget.MaxHP);
@@ -433,8 +654,6 @@ public class MonsterAI : MonoBehaviour
 
         float distanceFromCenter = FlatDistance(transform.position, GuardPillar.transform.position);
         float desiredRadius = Mathf.Max(0.8f, GuardPillar.captureRadius * 0.55f);
-        float heroDistance = FlatDistance(transform.position, heroTarget.transform.position);
-
         if (distanceFromCenter <= desiredRadius)
             return 0f;
 
@@ -444,27 +663,32 @@ public class MonsterAI : MonoBehaviour
 
     private bool IsCurrentUtilityActionValid()
     {
-        if (heroTarget == null || !heroTarget.IsAlive) return false;
-
-        float distance = FlatDistance(transform.position, heroTarget.transform.position);
+        float distance = heroTarget != null && heroTarget.IsAlive
+            ? FlatDistance(transform.position, heroTarget.transform.position)
+            : float.PositiveInfinity;
         return currentUtilityAction switch
         {
             MonsterUtilityAction.Advance => ScoreAdvance(distance) > 0f,
             MonsterUtilityAction.Attack => ScoreAttack(distance) > 0f,
             MonsterUtilityAction.Retreat => ScoreRetreat(distance) > 0f || retreating,
             MonsterUtilityAction.MageSpecial => ScoreMageSpecial(distance) > 0f,
-            MonsterUtilityAction.ReturnToGuard => ScoreReturnToGuard() > 0f,
+            MonsterUtilityAction.ReturnToGuard => GuardPillar != null,
+            MonsterUtilityAction.CollectGold => targetGoldPickup != null && targetGoldPickup.CanClaim(this),
+            MonsterUtilityAction.MineGold => targetGoldMine != null && targetGoldMine.CanWork(this),
             _ => true
         };
     }
 
     private void ExecuteUtilityAction()
     {
-        float distance = FlatDistance(transform.position, heroTarget.transform.position);
+        float distance = heroTarget != null && heroTarget.IsAlive
+            ? FlatDistance(transform.position, heroTarget.transform.position)
+            : float.PositiveInfinity;
 
         switch (currentUtilityAction)
         {
             case MonsterUtilityAction.Attack:
+                if (heroTarget == null || !heroTarget.IsAlive) { StopMoving(); break; }
                 StopMoving();
                 Face(heroTarget.transform.position);
                 if (attackTimer <= 0f) AttackHero(role == MonsterRole.Tank);
@@ -472,21 +696,27 @@ public class MonsterAI : MonoBehaviour
 
             case MonsterUtilityAction.Advance:
             {
-                float formationRange = role == MonsterRole.Mage ? Mathf.Min(preferredRange, attackRange) : Mathf.Max(.8f, attackRange * .82f);
-                Vector3 destination = BattlefieldTactics.FormationPoint(this, PredictedHeroPosition(.32f), formationRange);
+                if (heroTarget == null || !heroTarget.IsAlive) { StopMoving(); break; }
+                float formationRange = role == MonsterRole.Mage
+                    ? Mathf.Min(preferredRange, attackRange)
+                    : Mathf.Max(.8f, attackRange * .82f);
+                Vector3 destination = BattlefieldTactics.FormationPoint(
+                    this, PredictedHeroPosition(.32f), formationRange);
                 if (GuardPillar != null) destination = ClampToGuardZone(destination);
-                float stoppingDistance = role == MonsterRole.Mage
-                    ? Mathf.Max(0.2f, Mathf.Min(preferredRange, attackRange) - 0.25f)
-                    : Mathf.Max(0.2f, attackRange * 0.8f);
-                MoveTo(destination, stoppingDistance);
+                float stop = role == MonsterRole.Mage
+                    ? Mathf.Max(.2f, Mathf.Min(preferredRange, attackRange) - .25f)
+                    : Mathf.Max(.2f, attackRange * .8f);
+                MoveTo(destination, stop);
                 break;
             }
 
             case MonsterUtilityAction.Retreat:
-                ExecuteRetreatAction(distance);
+                if (heroTarget != null && heroTarget.IsAlive) ExecuteRetreatAction(distance);
+                else StopMoving();
                 break;
 
             case MonsterUtilityAction.MageSpecial:
+                if (heroTarget == null || !heroTarget.IsAlive) { StopMoving(); break; }
                 StopMoving();
                 Face(heroTarget.transform.position);
                 CastMageSpecial();
@@ -496,8 +726,22 @@ public class MonsterAI : MonoBehaviour
                 break;
 
             case MonsterUtilityAction.ReturnToGuard:
-                if (GuardPillar != null) MoveTo(GuardPillar.transform.position, 0.35f);
+                if (GuardPillar != null)
+                {
+                    if (FlatDistance(transform.position, GuardPillar.transform.position) >
+                        Mathf.Max(.9f, GuardPillar.captureRadius * .55f))
+                        MoveTo(GuardPillar.transform.position, .55f);
+                    else StopMoving();
+                }
                 else StopMoving();
+                break;
+
+            case MonsterUtilityAction.CollectGold:
+                ExecuteCollectGold();
+                break;
+
+            case MonsterUtilityAction.MineGold:
+                ExecuteMineGold();
                 break;
 
             default:
@@ -506,10 +750,134 @@ public class MonsterAI : MonoBehaviour
         }
     }
 
+    private void ExecuteCollectGold()
+    {
+        if (targetGoldPickup == null || !targetGoldPickup.CanClaim(this))
+        {
+            ReleasePickup();
+            nextDecisionAt = 0f;
+            StopMoving();
+            return;
+        }
+
+        float distance = FlatDistance(transform.position, targetGoldPickup.transform.position);
+        if (distance <= Mathf.Max(.5f, targetGoldPickup.pickupRadius))
+        {
+            StopMoving();
+            if (targetGoldPickup.TryCollect(this))
+            {
+                ReleasePickup();
+                nextDecisionAt = 0f;
+            }
+            return;
+        }
+
+        MoveTo(targetGoldPickup.transform.position, .25f);
+    }
+
+    private void ExecuteMineGold()
+    {
+        if (targetGoldMine == null || !targetGoldMine.CanWork(this))
+        {
+            ReleaseMine();
+            nextDecisionAt = 0f;
+            StopMoving();
+            return;
+        }
+
+        float distance = FlatDistance(transform.position, targetGoldMine.transform.position);
+        if (distance > targetGoldMine.workRadius * .9f)
+        {
+            miningProgress = 0f;
+            MoveTo(targetGoldMine.transform.position, Mathf.Max(.5f, targetGoldMine.workRadius * .55f));
+            return;
+        }
+
+        StopMoving();
+        Face(targetGoldMine.transform.position);
+        miningProgress += Time.deltaTime;
+        float interval = customWorkInterval > 0f
+            ? customWorkInterval
+            : targetGoldMine.workDuration;
+
+        if (miningProgress >= Mathf.Max(.25f, interval))
+        {
+            miningProgress = 0f;
+            Trigger("Attack");
+            if (!targetGoldMine.Harvest(this))
+            {
+                nextDecisionAt = 0f;
+                return;
+            }
+            CollectGoldAtFeet();
+        }
+    }
+
+    private void CollectGoldAtFeet()
+    {
+        if (!canGatherGold) return;
+        float radiusSqr = goldAutoPickupRadius * goldAutoPickupRadius;
+        foreach (GoldPickup coin in GoldPickup.Active)
+        {
+            if (coin == null || !coin.CanCollect) continue;
+            Vector3 delta = coin.transform.position - transform.position;
+            delta.y = 0f;
+            if (delta.sqrMagnitude <= radiusSqr && coin.TryCollect(this))
+            {
+                if (targetGoldPickup == coin)
+                {
+                    ReleasePickup();
+                    nextDecisionAt = 0f;
+                }
+                break;
+            }
+        }
+    }
+
+    private void ReleaseMine()
+    {
+        if (targetGoldMine != null) targetGoldMine.Release(this);
+        targetGoldMine = null;
+        miningProgress = 0f;
+    }
+
+    private void ReleasePickup()
+    {
+        if (targetGoldPickup != null) targetGoldPickup.Release(this);
+        targetGoldPickup = null;
+    }
+
+    private void ReleaseGoldTasks()
+    {
+        ReleaseMine();
+        ReleasePickup();
+    }
+
+    public void ClearGoldPickup(GoldPickup pickup)
+    {
+        if (targetGoldPickup == pickup)
+        {
+            targetGoldPickup = null;
+            nextDecisionAt = 0f;
+        }
+    }
+
+    public void ClearGoldMine(GoldMine mine)
+    {
+        if (targetGoldMine == mine)
+        {
+            targetGoldMine = null;
+            miningProgress = 0f;
+            nextDecisionAt = 0f;
+        }
+    }
+
     public void SetPlayerControlled(bool controlled)
     {
         IsPlayerControlled = controlled && IsAlive;
+        if (IsPlayerControlled) ReleaseGoldTasks();
         hasPlayerMoveTarget = false;
+        nextDecisionAt = 0f;
         if (agent != null && agent.enabled && agent.isOnNavMesh) agent.ResetPath();
     }
 
@@ -828,6 +1196,7 @@ public class MonsterAI : MonoBehaviour
         spawnProtection?.End();
         if (knockbackMotor != null) knockbackMotor.enabled = false;
         ActiveMonsters.Remove(this);
+        ReleaseGoldTasks();
 
         // Phát event NGAY khi HP về 0, trước animation corpse.
         // Hero sẽ bỏ focus trong cùng frame dù object vẫn còn tồn tại.
@@ -869,11 +1238,14 @@ public class MonsterAI : MonoBehaviour
         if (!IsAlive) return;
         if (GuardPillar != null && GuardPillar != pillar) GuardPillar.UnregisterGuard(this);
         GuardPillar = pillar;
+        ReleaseGoldTasks();
+        currentUtilityAction = MonsterUtilityAction.ReturnToGuard;
+        nextDecisionAt = 0f;
     }
 
     public void ClearGuard(CapturePillar pillar)
     {
-        if (GuardPillar == pillar) GuardPillar = null;
+        if (GuardPillar == pillar) { GuardPillar = null; nextDecisionAt = 0f; }
     }
 
     private float GetXPValue()
@@ -1136,6 +1508,8 @@ public sealed class MonsterTacticalIndicator : MonoBehaviour
             MonsterUtilityAction.Retreat => "← FALL BACK",
             MonsterUtilityAction.MageSpecial => "✦ CAST",
             MonsterUtilityAction.ReturnToGuard => "⌂ GUARD",
+            MonsterUtilityAction.CollectGold => "$ COLLECT",
+            MonsterUtilityAction.MineGold => "$ MINING",
             _ => "… THINK"
         };
         if (intent == lastIntent) return;
@@ -1144,6 +1518,8 @@ public sealed class MonsterTacticalIndicator : MonoBehaviour
         if (bubble != null) bubble.color = action switch
         {
             MonsterUtilityAction.Retreat => new Color(1f,.54f,.18f,.95f),
+            MonsterUtilityAction.CollectGold => new Color(1f,.8f,.25f,.95f),
+            MonsterUtilityAction.MineGold => new Color(.98f,.73f,.12f,.95f),
             MonsterUtilityAction.MageSpecial => new Color(.32f,.8f,1f,.95f),
             MonsterUtilityAction.Attack => new Color(1f,.3f,.22f,.95f),
             _ => new Color(.9f,.92f,.78f,.92f)

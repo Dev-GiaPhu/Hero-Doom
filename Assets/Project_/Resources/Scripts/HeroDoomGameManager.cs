@@ -144,6 +144,7 @@ public class HeroDoomGameManager : MonoBehaviour
         // A rebirth starts a clean run; only its permanent gold reward survives.
         Gold = startingGoldAmount;
         RunGoldEarned = 0d;
+        GoldMineManager.Instance?.ResetForRebirth();
         rebirthGoldMultiplier = Mathf.Max(1f, goldMultiplier);
         timedGoldMultiplier = 1f;
         timedGoldRemaining = 0f;
@@ -264,6 +265,21 @@ public class HeroDoomGameManager : MonoBehaviour
     public void GrantGold(double amount)
     {
         AddGoldInternal(amount, true);
+    }
+
+    /// <summary>World gold uses the same permanent/temporary economy multipliers as combat.</summary>
+    public void AddWorldGold(double baseAmount)
+    {
+        if (baseAmount <= 0d) return;
+
+        double income = baseAmount *
+            EconomyPacing *
+            GetGoldMultiplier() *
+            RebirthTreeIncomeMultiplier *
+            rebirthGoldMultiplier *
+            timedGoldMultiplier;
+
+        AddGoldInternal(income, true);
     }
 
     public void AddDamageGold(float actualDamage)

@@ -21725,6 +21725,7 @@ GameObject:
   - component: {fileID: 1350396458}
   - component: {fileID: 1350396459}
   - component: {fileID: 1350396460}
+  - component: {fileID: 1350396461}
   m_Layer: 0
   m_Name: GameManager
   m_TagString: Untagged
@@ -32572,3 +32573,35 @@ MonoBehaviour:
   useFallbackOverlayWhenNoPanel: 1
   defaultFullscreen: 1
   defaultFrameRateOption: 1
+
+--- !u!114 &1350396461
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1350396451}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: fec16e57b58c410b9eead1683647ceae, type: 3}
+  m_Name:
+  m_EditorClassIdentifier:
+  goldMinePrefab: {fileID: 103, guid: 3134c990753a4dfb8cef24dd5220aa21, type: 3}
+  goldPickupPrefab: {fileID: 203, guid: 3134c990753a4dfb8cef24dd5220aa22, type: 3}
+  map: {fileID: 403880879}
+  targetMineCount: 7
+  mineSpawnMinDistance: 10
+  mineSpawnMaxDistance: 36
+  mineSpacing: 11
+  waterClearance: 2.5
+  retireDistance: 68
+  refreshInterval: 2
+  targetLooseCoins: 16
+  maxWorldCoins: 80
+  looseGoldValue: 10
+  looseCoinLifetime: 60
+  looseCoinSpawnInterval: 3.5
+  looseCoinsPerInterval: 3
+  looseCoinSpacing: 2
+  minedCoinLifetime: 45
+  placementAttemptsPerRefresh: 14

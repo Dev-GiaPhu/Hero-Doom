@@ -1782,6 +1782,15 @@ MonoBehaviour:
   minimumActionCommitment: 0.45
   actionSwitchThreshold: 6
   currentActionInertia: 8
+  canGatherGold: 1
+  economicMotivation: 0.9
+  heroInterventionRadius: 10.5
+  economicSearchRadius: 38
+  lowGoldThreshold: 300
+  defensiveAggression: 1.1
+  customWorkInterval: 0
+  goldAutoPickupRadius: 1.35
+  goldAutoPickupInterval: 0.14
   rotationSpeed: 8
   knockbackForce: 3.8
   corpseHoldTime: 2.5

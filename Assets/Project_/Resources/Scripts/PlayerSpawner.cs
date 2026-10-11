@@ -346,13 +346,25 @@ public class PlayerSpawner : MonoBehaviour
     public bool TryAutoSpawn(int slot, bool chargeGold)
     {
         HeroBotAI hero = HeroDoomGameManager.Instance != null ? HeroDoomGameManager.Instance.CurrentHero : null;
-        if (hero == null || !hero.IsAlive) return false;
         if (upgrades != null && !upgrades.CanSpawn(slot)) return false;
+
+        Vector3 anchor;
+        if (hero != null && hero.IsAlive)
+            anchor = hero.transform.position;
+        else if (GoldMineManager.Instance != null)
+            anchor = GoldMineManager.Instance.EconomyAnchor;
+        else
+        {
+            anchor = Vector3.zero;
+            foreach (MonsterAI monster in MonsterAI.ActiveMonsters)
+                if (monster != null && monster.IsAlive) { anchor = monster.transform.position; break; }
+        }
+
         for (int i = 0; i < autoSpawnAttempts; i++)
         {
-            float angle = UnityEngine.Random.Range(0f, Mathf.PI * 2);
+            float angle = UnityEngine.Random.Range(0f, Mathf.PI * 2f);
             float distance = UnityEngine.Random.Range(autoSpawnDistance.x, Mathf.Max(autoSpawnDistance.x, autoSpawnDistance.y));
-            Vector3 point = hero.transform.position + new Vector3(Mathf.Cos(angle), 0, Mathf.Sin(angle)) * distance;
+            Vector3 point = anchor + new Vector3(Mathf.Cos(angle), 0, Mathf.Sin(angle)) * distance;
             if (TrySpawn(slot, point, chargeGold)) return true;
         }
         return false;
