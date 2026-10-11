@@ -4,19 +4,24 @@ using UnityEngine;
 public class ResourceHUDController : MonoBehaviour
 {
     [Header("UI References")]
+    [Tooltip("Hiển thị vàng hiện có của người triệu hồi.")]
     public TMP_Text coinText;
+    [Tooltip("Dòng nằm dưới vàng. Đây là số Rebirth Point dùng để mua node trong Rebirth Tree.")]
     public TMP_Text soulText;
 
     [Header("Data Source")]
     public HeroDoomGameManager gameManager;
-
-    [Header("Soul - chưa có gameplay, để Inspector quản lý")]
-    [Min(0)] public long displayedSouls = 0;
+    [Tooltip("Nguồn Rebirth Point. Nếu để trống, controller sẽ tự lấy SummonerUpgrades trong scene.")]
+    public SummonerUpgrades upgrades;
 
     void Awake()
     {
         if (gameManager == null)
             gameManager = FindFirstObjectByType<HeroDoomGameManager>();
+        if (upgrades == null)
+            upgrades = gameManager != null && gameManager.playerSpawner != null
+                ? gameManager.playerSpawner.upgrades
+                : FindFirstObjectByType<SummonerUpgrades>();
 
         Refresh();
     }
@@ -25,6 +30,10 @@ public class ResourceHUDController : MonoBehaviour
     {
         if (gameManager == null)
             gameManager = FindFirstObjectByType<HeroDoomGameManager>();
+        if (upgrades == null)
+            upgrades = gameManager != null && gameManager.playerSpawner != null
+                ? gameManager.playerSpawner.upgrades
+                : FindFirstObjectByType<SummonerUpgrades>();
 
         Refresh();
     }
@@ -43,6 +52,6 @@ public class ResourceHUDController : MonoBehaviour
         }
 
         if (soulText != null)
-            soulText.text = displayedSouls.ToString();
+            soulText.text = (upgrades != null ? upgrades.RebirthPoints : 0).ToString();
     }
 }

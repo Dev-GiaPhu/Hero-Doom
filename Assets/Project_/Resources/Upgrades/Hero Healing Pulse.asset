@@ -12,6 +12,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 3afbb2f0c5671c24e90aced1fd4fb06e, type: 3}
   m_Name: Hero Healing Pulse
   m_EditorClassIdentifier: 
+  category: 1
   type: 12
   displayName: Healing Pulse
   icon: {fileID: 21300000, guid: 38859361fb2a0914291b0943318d9b10, type: 3}

@@ -1,0 +1,159 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 4a1c7e2df60d4b1b8f2e4905a3c7186d, type: 3}
+  m_Name: Rebirth Tree Definition
+  m_EditorClassIdentifier: 
+  nodes:
+  - id: rebirth_0
+    displayName: Ancestral Cache
+    description: +25% gold at the start of every Rebirth.
+    cost: 1
+    prerequisites: 
+    bonus: 0
+    value: 0.25
+    icon: {fileID: 21300000, guid: d386936cb30cd2e499f82eece39d268f, type: 3}
+  - id: rebirth_1
+    displayName: Coin Relay
+    description: +12% gold from passive income and combat damage.
+    cost: 1
+    prerequisites: 00000000
+    bonus: 1
+    value: 0.12
+    icon: {fileID: 21300000, guid: 493cebb825fe8c548b28f5c3af8d9446, type: 3}
+  - id: rebirth_2
+    displayName: Gilded Coffers
+    description: +3 maximum army capacity.
+    cost: 1
+    prerequisites: 01000000
+    bonus: 4
+    value: 3
+    icon: {fileID: 21300000, guid: f06c3fc1b9568e54ca6c500c96aa195c, type: 3}
+  - id: rebirth_3
+    displayName: Bargain Sigil
+    description: Summons cost 10% less gold.
+    cost: 2
+    prerequisites: 02000000
+    bonus: 6
+    value: 0.1
+    icon: {fileID: 21300000, guid: c8f9a4272030adf47af945242bafe768, type: 3}
+  - id: rebirth_4
+    displayName: Bone Plating
+    description: All summoned monsters gain +15% maximum health.
+    cost: 1
+    prerequisites: 00000000
+    bonus: 2
+    value: 0.15
+    icon: {fileID: 21300000, guid: d668866db1ba8824ba5a34f35ffd711d, type: 3}
+  - id: rebirth_5
+    displayName: Blood Pact
+    description: All summoned monsters deal +15% damage.
+    cost: 1
+    prerequisites: 04000000
+    bonus: 3
+    value: 0.15
+    icon: {fileID: 21300000, guid: 64dde1283cc109b4281848126bb8ced1, type: 3}
+  - id: rebirth_6
+    displayName: Iron Cohort
+    description: +4 maximum army capacity.
+    cost: 2
+    prerequisites: 05000000
+    bonus: 4
+    value: 4
+    icon: {fileID: 21300000, guid: e6b45495f9b105b47acb67486820e952, type: 3}
+  - id: rebirth_7
+    displayName: Quick Ritual
+    description: Automatic summons complete 12% faster.
+    cost: 1
+    prerequisites: 00000000
+    bonus: 5
+    value: 0.12
+    icon: {fileID: 21300000, guid: 1a27d4f4ca1ac7a4eb8022a689bc683d, type: 3}
+  - id: rebirth_8
+    displayName: Endless Chant
+    description: Automatic summons complete another 10% faster.
+    cost: 2
+    prerequisites: 07000000
+    bonus: 5
+    value: 0.1
+    icon: {fileID: 21300000, guid: e219e085f011be4438d73b287622d6f5, type: 3}
+  - id: rebirth_9
+    displayName: Ward Shell
+    description: Newly summoned monsters are protected for +0.75 seconds.
+    cost: 1
+    prerequisites: 07000000
+    bonus: 7
+    value: 0.75
+    icon: {fileID: 21300000, guid: 601d41f8d90d73440b382373013236e2, type: 3}
+  - id: rebirth_10
+    displayName: War March
+    description: All summoned monsters move 12% faster.
+    cost: 2
+    prerequisites: 06000000
+    bonus: 8
+    value: 0.12
+    icon: {fileID: 21300000, guid: 848393d7dae9c6e4fa9513b16779ad13, type: 3}
+  - id: rebirth_11
+    displayName: Frenzy Brand
+    description: All summoned monsters attack 15% faster.
+    cost: 3
+    prerequisites: 0a000000
+    bonus: 9
+    value: 0.15
+    icon: {fileID: 21300000, guid: d679a2b0f1753884e95cd421831c6c72, type: 3}
+  - id: rebirth_12
+    displayName: Grave Bulwark
+    description: All summoned monsters gain another 25% maximum health.
+    cost: 2
+    prerequisites: 06000000
+    bonus: 2
+    value: 0.25
+    icon: {fileID: 21300000, guid: a831c3993154475488b047fe06a1e718, type: 3}
+  - id: rebirth_13
+    displayName: Legion Gate
+    description: Increase the maximum army capacity by 6.
+    cost: 3
+    prerequisites: 0c000000
+    bonus: 4
+    value: 6
+    icon: {fileID: 21300000, guid: 8d9b8eca5556ee74e9f06cd9e6f3c0d1, type: 3}
+  - id: rebirth_14
+    displayName: Rapid Conduit
+    description: Automatic summons complete another 10% faster.
+    cost: 2
+    prerequisites: 09000000
+    bonus: 5
+    value: 0.1
+    icon: {fileID: 21300000, guid: 20b1def6251ef7347a411bbeda6640fb, type: 3}
+  - id: rebirth_15
+    displayName: Merchant Cartel
+    description: Gain another 25% gold from passive income and combat damage.
+    cost: 3
+    prerequisites: 03000000
+    bonus: 1
+    value: 0.25
+    icon: {fileID: 21300000, guid: 0ff4de37afce9274ab323dcb142016b8, type: 3}
+  - id: rebirth_16
+    displayName: Eternal Ward
+    description: Newly summoned monsters are protected for another 1.25 seconds.
+    cost: 3
+    prerequisites: 0e000000
+    bonus: 7
+    value: 1.25
+    icon: {fileID: 21300000, guid: 072ddfdccb3196b4090be2574d43b8a2, type: 3}
+  - id: rebirth_17
+    displayName: Final Bargain
+    description: Summons cost another 10% less gold.
+    cost: 3
+    prerequisites: 0f000000
+    bonus: 6
+    value: 0.1
+    icon: {fileID: 21300000, guid: 1aec3542299b01f4988e857192af004a, type: 3}

@@ -12,6 +12,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 3afbb2f0c5671c24e90aced1fd4fb06e, type: 3}
   m_Name: Hero Vitality
   m_EditorClassIdentifier: 
+  category: 0
   type: 0
   displayName: Vitality
   icon: {fileID: 21300000, guid: 7b2900da17ff92f4d86a9501f2e2a662, type: 3}

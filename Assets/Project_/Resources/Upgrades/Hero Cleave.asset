@@ -12,6 +12,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 3afbb2f0c5671c24e90aced1fd4fb06e, type: 3}
   m_Name: Hero Cleave
   m_EditorClassIdentifier: 
+  category: 0
   type: 6
   displayName: Cleave
   icon: {fileID: 21300000, guid: 54d39db06911aef4a84020b0dfd3f1da, type: 3}

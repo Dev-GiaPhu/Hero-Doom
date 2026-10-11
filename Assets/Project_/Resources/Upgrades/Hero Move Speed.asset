@@ -12,6 +12,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 3afbb2f0c5671c24e90aced1fd4fb06e, type: 3}
   m_Name: Hero Move Speed
   m_EditorClassIdentifier: 
+  category: 0
   type: 3
   displayName: Move Speed
   icon: {fileID: 21300000, guid: a36d7e69bdc79004fbd0c10f9d1e7e39, type: 3}

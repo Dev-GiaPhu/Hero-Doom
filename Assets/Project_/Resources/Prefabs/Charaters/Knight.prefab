@@ -1717,9 +1717,14 @@ MonoBehaviour:
   - {fileID: 11400000, guid: ccdf107bc3fe5634d9545d745b214490, type: 2}
   - {fileID: 11400000, guid: 47a2ec90f474a78448bcebefec4aadd5, type: 2}
   - {fileID: 11400000, guid: 19b5a18358db65e4fb82f83eb89fd8dc, type: 2}
+  - {fileID: 11400000, guid: 3c2d643abf4c7cb41a6a35c86ab555ae, type: 2}
+  - {fileID: 11400000, guid: 00903bbaca34df746a75f9bfdb0f1f73, type: 2}
   attackImpactVisualPrefab: {fileID: 3116803481970552399, guid: b8fd87870ccab3947b65490dd704e561, type: 3}
   healingPulseVisualPrefab: {fileID: 1727790179758470796, guid: 7c191c9e62c61d544b8f9c8976882a8c, type: 3}
   arcaneNovaVisualPrefab: {fileID: 5130376929110071460, guid: 8a9871a2ea847ff47bad14b2964cfd4a, type: 3}
+  fireFieldPrefab: {fileID: 3435772033635169262, guid: dbfc615f9a2757b41a9c72fabc1d4ce7, type: 3}
+  orbitingSawPrefab: {fileID: 6510748441343951509, guid: 7076b223760111c45bb9a4b5fe833503, type: 3}
+  lightningStrikeVisualPrefab: {fileID: 6603307900659486267, guid: 4928847e77eca2a44a7beed2d24bb84a, type: 3}
   corpseHoldTime: 2.5
   shrinkDuration: 1.25
   currentAction: 0
@@ -1779,6 +1784,7 @@ MonoBehaviour:
   ringVisual: {fileID: 1853794650780212971}
   ringRenderer: {fileID: 1720577007655921917}
   energyShellRenderer: {fileID: 2538959277831607891}
+  energyGraphEffect: {fileID: 0}
   rotationSpeed: 45
   fadeOutDuration: 0.5
   introPulseDuration: 0.28

@@ -55,11 +55,11 @@ public class MonsterUpgradeCard : MonoBehaviour
             if (!unlocked) autoStatus.text = "Unlock this monster to access automation";
             else if (!upgrades.IsAutoUnlocked(slot)) autoStatus.text = $"Requires {upgrades.definitions[slot - 1].displayName} AUTO {d.previousMonsterAutoLevelRequired}";
             else if (a == 0) autoStatus.text = $"Unlock: one summon / {d.startingInterval:0}s";
-            else if (upgrades.IsGlobalArmyFull) autoStatus.text = $"Army full {MonsterAI.ActiveMonsters.Count}/{upgrades.maxAliveMonsters} - waiting";
+            else if (upgrades.IsGlobalArmyFull) autoStatus.text = $"Army full {MonsterAI.ActiveMonsters.Count}/{upgrades.EffectiveArmyCapacity} - waiting";
             else if (alive >= d.maxAlive) autoStatus.text = $"{d.displayName} cap {alive}/{d.maxAlive} - waiting";
-            else autoStatus.text = $"Next {upgrades.Remaining(slot):0.0}s  |  Every {d.Interval(a):0.0}s";
+            else autoStatus.text = $"Next {upgrades.Remaining(slot):0.0}s  |  Every {upgrades.AutoInterval(slot):0.0}s";
         }
-        if (progress != null) progress.fillAmount = a == 0 ? 0 : 1 - Mathf.Clamp01(upgrades.Remaining(slot) / d.Interval(a));
+        if (progress != null) progress.fillAmount = a == 0 ? 0 : 1 - Mathf.Clamp01(upgrades.Remaining(slot) / upgrades.AutoInterval(slot));
         if (powerButton != null) powerButton.interactable = unlocked ? upgrades.CanBuyPower(slot) : upgrades.CanUnlock(slot);
         if (autoButton != null) autoButton.interactable = unlocked && upgrades.CanBuyAuto(slot);
     }

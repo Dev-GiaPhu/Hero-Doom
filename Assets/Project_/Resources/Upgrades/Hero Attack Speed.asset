@@ -12,6 +12,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 3afbb2f0c5671c24e90aced1fd4fb06e, type: 3}
   m_Name: Hero Attack Speed
   m_EditorClassIdentifier: 
+  category: 0
   type: 2
   displayName: Attack Speed
   icon: {fileID: 21300000, guid: 7c05090c0ab0f48438a77d0d00ac8884, type: 3}

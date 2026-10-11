@@ -12,6 +12,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 3afbb2f0c5671c24e90aced1fd4fb06e, type: 3}
   m_Name: Hero Armor
   m_EditorClassIdentifier: 
+  category: 0
   type: 4
   displayName: Armor
   icon: {fileID: 21300000, guid: 063818116a9bad04cb4935f2f491cb89, type: 3}

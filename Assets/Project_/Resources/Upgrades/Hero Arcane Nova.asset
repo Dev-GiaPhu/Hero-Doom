@@ -12,10 +12,11 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 3afbb2f0c5671c24e90aced1fd4fb06e, type: 3}
   m_Name: Hero Arcane Nova
   m_EditorClassIdentifier: 
+  category: 1
   type: 13
   displayName: Arcane Nova
   icon: {fileID: 21300000, guid: 5eb086d9a5ab0084b9c31213093c3b8d, type: 3}
-  description: Release an expanding nova that damages nearby monsters on a cooldown.
+  description: Release a wide lightning nova that strikes clustered enemies.
   utility:
     survivalNeed: 0
     closeThreat: 0.1

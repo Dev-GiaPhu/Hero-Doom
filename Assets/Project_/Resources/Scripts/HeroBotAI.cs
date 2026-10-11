@@ -262,7 +262,8 @@ public class HeroBotAI : MonoBehaviour
         float proximity = Mathf.Clamp01(1f - distance / Mathf.Max(1f, searchRadius)) * 12f;
         float finishValue = (1f - monster.HPPercent) * 7f;
         float objectiveThreat = monster.GuardPillar != null ? 5f : 0f;
-        return threat + proximity + finishValue + objectiveThreat;
+        float isolatedBonus = Mathf.Clamp01(1f - BattlefieldTactics.CountAlliesNear(monster, monster.transform.position, 3.2f) / 3f) * 5f;
+        return threat + proximity + finishValue + objectiveThreat + isolatedBonus;
     }
 
     private void EvaluateUtilityActions()
@@ -449,12 +450,23 @@ public class HeroBotAI : MonoBehaviour
         }
 
         float distance = FlatDistance(transform.position, targetMonster.transform.position);
+        int nearbyThreats = CountNearbyMonsters(transform.position, 3.8f);
+        float hpRatio = currentHP / Mathf.Max(1f, maxHP);
+        // Reposition instead of trading in place when surrounded: a small hit-and-run step opens space.
+        if (nearbyThreats >= 3 && hpRatio < .62f)
+        {
+            Vector3 away = transform.position - targetMonster.transform.position; away.y = 0f;
+            if (away.sqrMagnitude < .01f) away = -transform.forward;
+            Vector3 lateral = Vector3.Cross(Vector3.up, away.normalized) * ((GetInstanceID() & 1) == 0 ? 1f : -1f);
+            Vector3 retreat = transform.position + away.normalized * 2.2f + lateral * 1.1f;
+            if (NavMesh.SamplePosition(retreat, out NavMeshHit tacticalHit, 2.5f, NavMesh.AllAreas)) MoveTo(tacticalHit.position, .15f);
+            return;
+        }
         if (distance > attackRange)
         {
             MoveTo(targetMonster.transform.position);
             return;
         }
-
         StopMoving();
         Face(targetMonster.transform.position);
         if (attackTimer <= 0f) AttackTarget();
@@ -532,8 +544,7 @@ public class HeroBotAI : MonoBehaviour
 
         float cooldownScale = 1f - 0.07f * upgradeStacks[(int)HeroUpgradeType.AttackSpeed];
         attackTimer = Mathf.Max(0.18f, attackCooldown * Mathf.Max(0.45f, cooldownScale));
-        Trigger("Attack");
-        attackCounter++;
+        Trigger("Attack");`r`n        GameAudioController.Instance?.PlayMeleeHit();`r`n        attackCounter++;
 
         CapturePillarManager pillars = CapturePillarManager.Instance;
         float factionDamage = pillars != null ? pillars.HeroDamageMultiplier : 1f;
@@ -708,8 +719,7 @@ public class HeroBotAI : MonoBehaviour
         while (Experience >= ExperienceToNext)
         {
             Experience -= ExperienceToNext;
-            Level++;
-            // Level growth keeps the Hero competitive through the middle of a long run.
+            Level++;`r`n            GameAudioController.Instance?.PlayReward();`r`n            // Level growth keeps the Hero competitive through the middle of a long run.
             maxHP *= 1.055f;
             currentHP = Mathf.Min(maxHP, currentHP + maxHP * .04f);
             QueueUpgradeDecision();
@@ -981,3 +991,4 @@ public class HeroBotAI : MonoBehaviour
         return Vector3.Distance(a, b);
     }
 }
+

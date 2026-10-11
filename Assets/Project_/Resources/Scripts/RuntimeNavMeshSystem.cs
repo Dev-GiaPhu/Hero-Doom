@@ -12,6 +12,7 @@ public class RuntimeNavMeshSystem : MonoBehaviour
     private NavMeshDataInstance navInstance;
     private float dirtyTimer = -1f;
     private AsyncOperation buildOperation;
+    private bool rebuildQueued;
 
     void Start()
     {
@@ -28,11 +29,28 @@ public class RuntimeNavMeshSystem : MonoBehaviour
 
     public void RequestRebuild()
     {
+        // Map có thể đổi trong khi NavMesh async build còn chạy. Giữ một lượt rebuild
+        // kế tiếp thay vì bỏ qua thay đổi mới nhất, tránh đất đã hiện nhưng NavMesh cũ.
+        if (buildOperation != null && !buildOperation.isDone)
+        {
+            rebuildQueued = true;
+            return;
+        }
         dirtyTimer = rebuildDelay;
     }
 
     void Update()
     {
+        if (buildOperation != null)
+        {
+            if (!buildOperation.isDone) return;
+            buildOperation = null;
+            if (rebuildQueued)
+            {
+                rebuildQueued = false;
+                dirtyTimer = rebuildDelay;
+            }
+        }
         if (dirtyTimer < 0f) return;
         dirtyTimer -= Time.deltaTime;
         if (dirtyTimer > 0f) return;
@@ -42,7 +60,12 @@ public class RuntimeNavMeshSystem : MonoBehaviour
 
     private void Rebuild()
     {
-        if (map == null || (buildOperation != null && !buildOperation.isDone)) return;
+        if (map == null) return;
+        if (buildOperation != null && !buildOperation.isDone)
+        {
+            rebuildQueued = true;
+            return;
+        }
 
         int groundLayer = LayerMask.NameToLayer("Ground");
         if (groundLayer < 0) return;

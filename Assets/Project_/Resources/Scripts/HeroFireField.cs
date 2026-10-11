@@ -1,6 +1,6 @@
 using UnityEngine;
 
-/// <summary>Timed ground hazard spawned from an authored Visual Effect Graph prefab.</summary>
+/// <summary>Timed ground hazard using an authored visual prefab.</summary>
 public sealed class HeroFireField : MonoBehaviour
 {
     public HeroSkillBurst visuals;

@@ -50,20 +50,41 @@ public class PlayerSpawner : MonoBehaviour
     public event Action<int> SelectedMonsterChanged;
 
     [Header("Spawn click feedback")]
+    [Tooltip("Scale pulse khi triệu hồi thành công.")]
     [Min(0.05f)] public float crosshairPulseDuration = 0.18f;
     [Range(1f, 1.5f)] public float crosshairPulseScale = 1.16f;
+
+    [Header("Thiếu vàng - phản hồi khi click triệu hồi")]
+    [Tooltip("Màu flash nhẹ của crosshair khi click triệu hồi nhưng không đủ vàng.")]
+    public Color insufficientGoldColor = new(1f, 0.18f, 0.2f, 1f);
+    [Tooltip("Thời lượng flash đỏ và scale pulse khi thiếu vàng.")]
+    [Range(0.08f, 0.8f)] public float insufficientGoldFeedbackDuration = 0.32f;
+    [Tooltip("Scale lớn nhất của crosshair khi thiếu vàng.")]
+    [Range(1f, 1.5f)] public float insufficientGoldPulseScale = 1.1f;
+    [Tooltip("Âm lượng beep khi thiếu vàng.")]
+    [Range(0f, 1f)] public float insufficientGoldSoundVolume = 0.22f;
+    [Tooltip("Khoảng nghỉ tối thiểu giữa các beep để click liên tục không gây chói tai.")]
+    [Range(0.05f, 1f)] public float insufficientGoldSoundCooldown = 0.16f;
+    [Tooltip("Nguồn âm đã author sẵn. Để trống, hệ thống dùng AudioSource trên PlayerSpawner.")]
+    public AudioSource feedbackAudioSource;
+    [Tooltip("Có thể gán clip SFX riêng. Nếu để trống, game phát một beep ngắn được tạo sẵn.")]
+    public AudioClip insufficientGoldSound;
 
     private Camera mainCam;
     private InfiniteMapGenerator map;
     private Vector3 crosshairBaseScale = Vector3.one;
     private Coroutine crosshairPulseRoutine;
+    private Coroutine insufficientGoldFeedbackRoutine;
+    private SpriteRenderer[] crosshairSprites;
+    private Color[] crosshairBaseColors;
+    private float nextInsufficientGoldSoundTime;
     private MonsterAI controlledMonster;
 
     void Start()
     {
         mainCam = Camera.main;
         map = FindFirstObjectByType<InfiniteMapGenerator>();
-        if (crosshairIndicator != null) crosshairBaseScale = crosshairIndicator.localScale;
+        CacheCrosshairVisual();
         SelectedMonsterChanged?.Invoke(currentMonsterIndex);
     }
 
@@ -98,15 +119,19 @@ public class PlayerSpawner : MonoBehaviour
 
     private void CycleControlledMonster()
     {
+        // F is a true toggle: one press takes control, the next returns control to AI.
+        if (controlledMonster != null)
+        {
+            controlledMonster.SetPlayerControlled(false);
+            controlledMonster = null;
+            return;
+        }
         var alive = new System.Collections.Generic.List<MonsterAI>();
         foreach (MonsterAI monster in MonsterAI.ActiveMonsters)
             if (monster != null && monster.IsAlive) alive.Add(monster);
         alive.Sort((a, b) => a.GetInstanceID().CompareTo(b.GetInstanceID()));
-        if (alive.Count == 0) { controlledMonster = null; return; }
-
-        int index = controlledMonster == null ? -1 : alive.IndexOf(controlledMonster);
-        if (controlledMonster != null) controlledMonster.SetPlayerControlled(false);
-        controlledMonster = alive[(index + 1) % alive.Count];
+        if (alive.Count == 0) return;
+        controlledMonster = alive[0];
         controlledMonster.SetPlayerControlled(true);
     }
 
@@ -148,7 +173,7 @@ public class PlayerSpawner : MonoBehaviour
 
     public double GetCost(int slot)
     {
-        return slot switch
+        double baseCost = slot switch
         {
             0 => monster1Cost,
             1 => monster2Cost,
@@ -156,6 +181,7 @@ public class PlayerSpawner : MonoBehaviour
             3 => monster4Cost,
             _ => 0d
         };
+        return baseCost * (upgrades != null ? upgrades.RebirthSummonCostMultiplier : 1f);
     }
 
     private void HandleMouseAim()
@@ -184,16 +210,36 @@ public class PlayerSpawner : MonoBehaviour
     {
         if (mainCam == null || Mouse.current == null) return;
         Ray ray = mainCam.ScreenPointToRay(Mouse.current.position.ReadValue());
-        if (Physics.Raycast(ray, out RaycastHit hit, 500f, groundLayer) &&
-            TrySpawn(currentMonsterIndex, hit.point, true))
+        if (!Physics.Raycast(ray, out RaycastHit hit, 500f, groundLayer) || !IsValidSpawn(hit.point))
+            return;
+
+        HeroDoomGameManager manager = HeroDoomGameManager.Instance;
+        if (manager == null || !manager.CanAfford(GetCost(currentMonsterIndex)))
+        {
+            PlayInsufficientGoldFeedback();
+            return;
+        }
+
+        if (TrySpawn(currentMonsterIndex, hit.point, true))
         {
             PulseCrosshair();
         }
     }
 
+    private void CacheCrosshairVisual()
+    {
+        if (crosshairIndicator == null) return;
+        crosshairBaseScale = crosshairIndicator.localScale;
+        crosshairSprites = crosshairIndicator.GetComponentsInChildren<SpriteRenderer>(true);
+        crosshairBaseColors = new Color[crosshairSprites.Length];
+        for (int i = 0; i < crosshairSprites.Length; i++)
+            crosshairBaseColors[i] = crosshairSprites[i] != null ? crosshairSprites[i].color : Color.white;
+    }
+
     private void PulseCrosshair()
     {
         if (crosshairIndicator == null) return;
+        ResetCrosshairVisual();
         if (crosshairPulseRoutine != null) StopCoroutine(crosshairPulseRoutine);
         crosshairPulseRoutine = StartCoroutine(CrosshairPulseRoutine());
     }
@@ -222,6 +268,70 @@ public class PlayerSpawner : MonoBehaviour
 
         crosshairIndicator.localScale = crosshairBaseScale;
         crosshairPulseRoutine = null;
+    }
+
+    private void PlayInsufficientGoldFeedback()
+    {
+        if (crosshairIndicator == null) return;
+        if (crosshairSprites == null) CacheCrosshairVisual();
+        if (crosshairPulseRoutine != null) StopCoroutine(crosshairPulseRoutine);
+        if (insufficientGoldFeedbackRoutine != null) StopCoroutine(insufficientGoldFeedbackRoutine);
+        insufficientGoldFeedbackRoutine = StartCoroutine(InsufficientGoldFeedbackRoutine());
+        PlayInsufficientGoldSound();
+    }
+
+    private IEnumerator InsufficientGoldFeedbackRoutine()
+    {
+        float duration = Mathf.Max(0.08f, insufficientGoldFeedbackDuration);
+        float elapsed = 0f;
+        Vector3 peakScale = crosshairBaseScale * insufficientGoldPulseScale;
+        while (elapsed < duration)
+        {
+            elapsed += Time.unscaledDeltaTime;
+            float normalized = Mathf.Clamp01(elapsed / duration);
+            float pulse = Mathf.Sin(normalized * Mathf.PI);
+            crosshairIndicator.localScale = Vector3.Lerp(crosshairBaseScale, peakScale, pulse);
+            SetCrosshairColor(pulse);
+            yield return null;
+        }
+
+        ResetCrosshairVisual();
+        insufficientGoldFeedbackRoutine = null;
+    }
+
+    private void SetCrosshairColor(float redAmount)
+    {
+        if (crosshairSprites == null) return;
+        for (int i = 0; i < crosshairSprites.Length; i++)
+        {
+            if (crosshairSprites[i] == null) continue;
+            Color flash = insufficientGoldColor;
+            flash.a = crosshairBaseColors[i].a;
+            crosshairSprites[i].color = Color.Lerp(crosshairBaseColors[i], flash, redAmount);
+        }
+    }
+
+    private void ResetCrosshairVisual()
+    {
+        if (crosshairIndicator != null) crosshairIndicator.localScale = crosshairBaseScale;
+        if (crosshairSprites == null || crosshairBaseColors == null) return;
+        for (int i = 0; i < crosshairSprites.Length; i++)
+            if (crosshairSprites[i] != null) crosshairSprites[i].color = crosshairBaseColors[i];
+    }
+
+    private void PlayInsufficientGoldSound()
+    {
+        if (Time.unscaledTime < nextInsufficientGoldSoundTime || insufficientGoldSoundVolume <= 0f) return;
+        nextInsufficientGoldSoundTime = Time.unscaledTime + insufficientGoldSoundCooldown;
+        if (feedbackAudioSource == null)
+        {
+            feedbackAudioSource = GetComponent<AudioSource>();
+            if (feedbackAudioSource == null) feedbackAudioSource = gameObject.AddComponent<AudioSource>();
+            feedbackAudioSource.playOnAwake = false;
+            feedbackAudioSource.spatialBlend = 0f;
+        }
+
+        AudioClip clip = insufficientGoldSound != null ? insufficientGoldSound : Resources.Load<AudioClip>("SFX/NoMoney");`r`n        if (clip != null) feedbackAudioSource.PlayOneShot(clip, insufficientGoldSoundVolume);`r`n        else GameAudioController.Instance?.PlayNoMoney();
     }
 
     public bool TryAutoSpawn(int slot, bool chargeGold)
@@ -256,8 +366,7 @@ public class PlayerSpawner : MonoBehaviour
         MonsterAI ai = go.GetComponent<MonsterAI>();
         if (controlledMonster != null && !controlledMonster.IsAlive) controlledMonster = null;
         upgrades?.Apply(ai, slot);
-        CapturePillarManager.Instance?.TryAssignGuard(ai, navHit.position);
-        return true;
+        CapturePillarManager.Instance?.TryAssignGuard(ai, navHit.position);`r`n        GameAudioController.Instance?.PlaySummon();`r`n        return true;
     }
 
     private bool IsValidSpawn(Vector3 point)
@@ -269,3 +378,4 @@ public class PlayerSpawner : MonoBehaviour
             map.IsSafeDistanceFromWater(point, spawnWaterClearance);
     }
 }
+

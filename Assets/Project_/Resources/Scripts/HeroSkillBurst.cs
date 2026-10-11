@@ -1,49 +1,76 @@
 using UnityEngine;
 using UnityEngine.VFX;
 
-/// <summary>Runs an Editor-authored Visual Effect Graph prefab for a short impact/skill cue.</summary>
-public class HeroSkillBurst : MonoBehaviour
+/// <summary>Plays an authored combat-visual prefab. It can use meshes, materials, particles, or VFX Graph.</summary>
+public sealed class HeroSkillBurst : MonoBehaviour
 {
-    [Tooltip("Visual Effect Graph components authored on this prefab.")]
+    [Tooltip("Optional Visual Effect Graph layers authored on this prefab.")]
     public VisualEffect[] visualEffects;
-    [Min(0.1f)] public float duration = 1f;
+    [Tooltip("Renderers authored below this prefab. Their own tint is preserved while fading out.")]
+    public Renderer[] visualRenderers;
+    [Tooltip("Scales and rotates the authored visual root for a short burst.")]
+    public bool animateScale = true;
+    public Transform animatedRoot;
+    [Min(.05f)] public float duration = .6f;
+    [Min(0f)] public float startScale = .25f;
+    [Min(0f)] public float endScale = 1f;
+    public float rotationSpeed;
     public bool destroyAfterPlayback = true;
-    private float age;
+
+    private float started;
+    private MaterialPropertyBlock propertyBlock;
+    private Color[] authoredColors;
 
     private void Awake()
     {
-        if (visualEffects == null || visualEffects.Length == 0)
-            visualEffects = GetComponentsInChildren<VisualEffect>(true);
-    }
-
-    public void Play(Vector3 position)
-    {
-        transform.position = position;
-        age = 0f;
-        foreach (VisualEffect effect in visualEffects)
+        started = Time.time;
+        if (visualEffects == null) visualEffects = GetComponentsInChildren<VisualEffect>(true);
+        if (visualRenderers == null || visualRenderers.Length == 0) visualRenderers = GetComponentsInChildren<Renderer>(true);
+        if (animateScale && animatedRoot == null) animatedRoot = transform;
+        authoredColors = new Color[visualRenderers.Length];
+        for (int i = 0; i < visualRenderers.Length; i++)
         {
-            if (effect == null || effect.visualEffectAsset == null) continue;
-            effect.Reinit();
-            effect.gameObject.SetActive(true);
-            effect.Play();
-            effect.SendEvent("OnPlay");
+            Material material = visualRenderers[i] != null ? visualRenderers[i].sharedMaterial : null;
+            authoredColors[i] = material != null && material.HasProperty("_BaseColor") ? material.GetColor("_BaseColor") :
+                material != null && material.HasProperty("_Color") ? material.GetColor("_Color") : Color.white;
         }
     }
 
+    public void Play()
+    {
+        started = Time.time;
+        foreach (VisualEffect effect in visualEffects ?? System.Array.Empty<VisualEffect>())
+            if (effect != null && effect.visualEffectAsset != null) { effect.Reinit(); effect.Play(); }
+    }
+
+    public void Play(Vector3 position) { transform.position = position; Play(); }
+
     private void Update()
     {
-        if (!destroyAfterPlayback) return;
-        age += Time.deltaTime;
-        if (age < Mathf.Max(.1f, duration)) return;
-        foreach (VisualEffect effect in visualEffects) if (effect != null) effect.Stop();
-        Destroy(gameObject);
+        float t = Mathf.Clamp01((Time.time - started) / Mathf.Max(.05f, duration));
+        if (animateScale && animatedRoot != null)
+        {
+            float scale = Mathf.Lerp(startScale, endScale, Mathf.SmoothStep(0f, 1f, t));
+            animatedRoot.localScale = Vector3.one * scale;
+            animatedRoot.Rotate(Vector3.up, rotationSpeed * Time.deltaTime, Space.Self);
+        }
+
+        propertyBlock ??= new MaterialPropertyBlock();
+        for (int i = 0; i < visualRenderers.Length; i++)
+        {
+            Renderer renderer = visualRenderers[i];
+            if (renderer == null) continue;
+            Color tint = authoredColors[i]; tint.a *= 1f - t;
+            renderer.GetPropertyBlock(propertyBlock);
+            propertyBlock.SetColor("_BaseColor", tint);
+            propertyBlock.SetColor("_Color", tint);
+            renderer.SetPropertyBlock(propertyBlock);
+        }
+        if (t >= 1f && destroyAfterPlayback) Destroy(gameObject);
     }
 
     public static HeroSkillBurst Spawn(HeroSkillBurst prefab, Vector3 position)
     {
-        if (prefab == null) return null;
-        HeroSkillBurst instance = Instantiate(prefab, position, prefab.transform.rotation);
-        instance.Play(position);
-        return instance;
+        return prefab == null ? null : Instantiate(prefab, position, Quaternion.identity);
     }
 }

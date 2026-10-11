@@ -12,6 +12,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 3afbb2f0c5671c24e90aced1fd4fb06e, type: 3}
   m_Name: Hero Shockwave
   m_EditorClassIdentifier: 
+  category: 1
   type: 10
   displayName: Shockwave
   icon: {fileID: 21300000, guid: 8091542f7894c9a4cb74a81a3cc0d6d1, type: 3}

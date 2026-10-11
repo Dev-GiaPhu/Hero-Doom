@@ -1,6 +1,6 @@
 using UnityEngine;
 
-public class HeroDoomGameManager : MonoBehaviour
+[RequireComponent(typeof(GameAudioController))]`r`npublic class HeroDoomGameManager : MonoBehaviour
 {
     public static HeroDoomGameManager Instance { get; private set; }
 
@@ -50,6 +50,7 @@ public class HeroDoomGameManager : MonoBehaviour
         }
 
         Instance = this;
+        if (GetComponent<GameAudioController>() == null) gameObject.AddComponent<GameAudioController>();
         Gold = startingGold;
     }
 
@@ -58,7 +59,10 @@ public class HeroDoomGameManager : MonoBehaviour
         HeroBotAI hero = FindFirstObjectByType<HeroBotAI>();
 
         if (hero != null)
+        {
             RegisterHero(hero);
+            StartCoroutine(MoveInitialHeroToSafeGround(hero));
+        }
         else
             SpawnHero(Vector3.zero);
     }
@@ -71,7 +75,7 @@ public class HeroDoomGameManager : MonoBehaviour
             if (timedGoldRemaining <= 0f) timedGoldMultiplier = 1f;
         }
         double pace = EconomyPacing;
-        Gold += passiveGoldPerSecond * pace * GetGoldMultiplier() * rebirthGoldMultiplier * timedGoldMultiplier * Time.deltaTime;
+        Gold += passiveGoldPerSecond * pace * GetGoldMultiplier() * RebirthTreeIncomeMultiplier * rebirthGoldMultiplier * timedGoldMultiplier * Time.deltaTime;
 
         if (respawnTimer > 0f)
         {
@@ -82,6 +86,18 @@ public class HeroDoomGameManager : MonoBehaviour
         }
     }
 
+    private System.Collections.IEnumerator MoveInitialHeroToSafeGround(HeroBotAI hero)
+    {
+        // Map chunks and NavMesh can finish one frame after the scene Hero is registered.
+        yield return null;
+        if (hero == null || !hero.IsAlive) yield break;
+        map ??= FindFirstObjectByType<InfiniteMapGenerator>();
+        if (map == null || !map.IsWaterAtWorldPosition(hero.transform.position)) yield break;
+        if (map.TryGetSafeGround(Vector3.zero, Mathf.Max(24f, respawnSearchRadius * 3f), out Vector3 safe))
+            hero.transform.position = safe;
+        else
+            Debug.LogError("[HeroDoom] Could not find safe ground for the initial Hero spawn.", this);
+    }
     public void RegisterHero(HeroBotAI hero)
     {
         if (hero == null) return;
@@ -156,6 +172,7 @@ public class HeroDoomGameManager : MonoBehaviour
 
     private void SpawnHero(Vector3 near)
     {
+        map ??= FindFirstObjectByType<InfiniteMapGenerator>();
         if (heroPrefab == null)
         {
             Debug.LogError("[HeroDoom] Hero Prefab chưa được gán trong GameManager Inspector.");
@@ -247,7 +264,7 @@ public class HeroDoomGameManager : MonoBehaviour
         Gold +=
             actualDamage *
             goldPerDamage *
-            (float)EconomyPacing * GetGoldMultiplier() * rebirthGoldMultiplier * timedGoldMultiplier;
+            (float)EconomyPacing * GetGoldMultiplier() * RebirthTreeIncomeMultiplier * rebirthGoldMultiplier * timedGoldMultiplier;
     }
 
     public float GetGoldMultiplier()
@@ -256,6 +273,11 @@ public class HeroDoomGameManager : MonoBehaviour
             ? pillarManager.GoldMultiplier
             : 1f;
     }
+
+    private float RebirthTreeIncomeMultiplier =>
+        playerSpawner != null && playerSpawner.upgrades != null
+            ? playerSpawner.upgrades.RebirthGoldIncomeMultiplier
+            : 1f;
 
     public static string FormatNumber(double value)
     {
@@ -303,3 +325,4 @@ public class HeroDoomGameManager : MonoBehaviour
         return negative ? "-" + result : result;
     }
 }
+

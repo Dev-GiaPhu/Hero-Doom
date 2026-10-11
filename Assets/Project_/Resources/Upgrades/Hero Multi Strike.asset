@@ -12,6 +12,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 3afbb2f0c5671c24e90aced1fd4fb06e, type: 3}
   m_Name: Hero Multi Strike
   m_EditorClassIdentifier: 
+  category: 0
   type: 9
   displayName: Multi Strike
   icon: {fileID: 21300000, guid: 803d283760f56084e908c91eb0e7d312, type: 3}

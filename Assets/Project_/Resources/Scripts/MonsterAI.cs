@@ -2,6 +2,7 @@ using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.AI;
+using TMPro;
 
 public enum MonsterRole
 {
@@ -67,6 +68,12 @@ public class MonsterAI : MonoBehaviour
     [Min(0f)] public float actionSwitchThreshold = 6f;
     [Min(0f)] public float currentActionInertia = 8f;
 
+    [Header("Tactical Cooperation")]
+    [Tooltip("Preferred separation from friendly monsters. Formation slots and retreat use this to avoid clumping.")]
+    [Range(0.6f, 4f)] public float allySpacing = 1.6f;
+    [Tooltip("How strongly this role follows its formation position around the Hero.")]
+    [Range(0f, 2f)] public float formationWeight = 0.8f;
+
     [Header("Combat Feel")]
     public float rotationSpeed = 12f;
     public float knockbackForce = 0.7f;
@@ -77,6 +84,7 @@ public class MonsterAI : MonoBehaviour
     public float HPPercent => maxHP <= 0f ? 0f : currentHP / maxHP;
     public CapturePillar GuardPillar { get; private set; }
     public bool IsPlayerControlled { get; private set; }
+    public MonsterUtilityAction CurrentTacticalAction => currentUtilityAction;
     private Vector3 playerMoveTarget;
     private bool hasPlayerMoveTarget;
 
@@ -101,6 +109,8 @@ public class MonsterAI : MonoBehaviour
     [SerializeField] private float currentUtilityScore;
     private float nextDecisionAt;
     private float actionCommittedUntil;
+    private Vector3 lastHeroPosition;
+    private Vector3 heroVelocityEstimate;
 
     void Awake()
     {
@@ -128,15 +138,23 @@ public class MonsterAI : MonoBehaviour
         Trigger("SpawnGround");
     }
 
-    public void ApplySummonerUpgrade(float healthMultiplier, float damageMultiplier)
+    private float appliedMoveSpeedMultiplier = 1f;
+    private float appliedAttackSpeedMultiplier = 1f;
+
+    public void ApplySummonerUpgrade(float healthMultiplier, float damageMultiplier, float moveSpeedMultiplier = 1f, float attackSpeedMultiplier = 1f)
     {
         float hpRatio = currentHP / Mathf.Max(1, maxHP);
         maxHP = maxHP / appliedHealthMultiplier * healthMultiplier;
         currentHP = maxHP * hpRatio;
         attackDamage = attackDamage / appliedDamageMultiplier * damageMultiplier;
         specialDamage = specialDamage / appliedDamageMultiplier * damageMultiplier;
+        moveSpeed = moveSpeed / Mathf.Max(.01f, appliedMoveSpeedMultiplier) * Mathf.Max(.01f, moveSpeedMultiplier);
+        attackCooldown = attackCooldown * Mathf.Max(.01f, appliedAttackSpeedMultiplier) / Mathf.Max(.01f, attackSpeedMultiplier);
         appliedHealthMultiplier = healthMultiplier;
         appliedDamageMultiplier = damageMultiplier;
+        appliedMoveSpeedMultiplier = moveSpeedMultiplier;
+        appliedAttackSpeedMultiplier = attackSpeedMultiplier;
+        ApplyAgentSettings();
     }
 
     public void ConfigureBySlot(int slot)
@@ -186,6 +204,7 @@ public class MonsterAI : MonoBehaviour
         }
 
         if (!TryPlaceOnNavMesh()) return;
+        UpdateHeroPrediction();
 
         if (IsPlayerControlled)
         {
@@ -215,6 +234,19 @@ public class MonsterAI : MonoBehaviour
         ExecuteUtilityAction();
     }
 
+    private void UpdateHeroPrediction()
+    {
+        if (heroTarget == null) return;
+        Vector3 current = heroTarget.transform.position;
+        heroVelocityEstimate = Vector3.Lerp(heroVelocityEstimate, (current - lastHeroPosition) / Mathf.Max(.01f, Time.deltaTime), .18f);
+        heroVelocityEstimate.y = 0f;
+        lastHeroPosition = current;
+    }
+
+    private Vector3 PredictedHeroPosition(float leadSeconds)
+    {
+        return heroTarget == null ? transform.position : heroTarget.transform.position + Vector3.ClampMagnitude(heroVelocityEstimate, 8f) * leadSeconds;
+    }
     private void EvaluateUtilityAction()
     {
         float distance = FlatDistance(transform.position, heroTarget.transform.position);
@@ -312,9 +344,11 @@ public class MonsterAI : MonoBehaviour
         float score = 58f + (1f - Mathf.Clamp01(distance / Mathf.Max(0.1f, attackRange))) * 16f;
         float heroHp = heroTarget.CurrentHP / Mathf.Max(1f, heroTarget.MaxHP);
 
-        if (role == MonsterRole.Assassin) score += (1f - heroHp) * 20f;
+        float teamPressure = BattlefieldTactics.FocusPressure(heroTarget);
+        if (role == MonsterRole.Assassin) score += (1f - heroHp) * 20f + teamPressure * 12f;
         if (role == MonsterRole.Tank) score += 7f;
         if (role == MonsterRole.Mage) score -= 7f;
+        score -= BattlefieldTactics.SpacingPenalty(this, transform.position, allySpacing);
 
         return score;
     }
@@ -335,6 +369,9 @@ public class MonsterAI : MonoBehaviour
         if (role == MonsterRole.Assassin) score += 12f;
         if (role == MonsterRole.Tank) score += 4f;
         if (role == MonsterRole.Mage) score += 5f;
+        Vector3 formation = BattlefieldTactics.FormationPoint(this, PredictedHeroPosition(.22f), desiredRange);
+        score += Mathf.Clamp01(FlatDistance(transform.position, formation) / Mathf.Max(1f, desiredRange)) * 12f * formationWeight;
+        score -= BattlefieldTactics.SpacingPenalty(this, transform.position, allySpacing);
 
         return score;
     }
@@ -404,7 +441,8 @@ public class MonsterAI : MonoBehaviour
 
             case MonsterUtilityAction.Advance:
             {
-                Vector3 destination = heroTarget.transform.position;
+                float formationRange = role == MonsterRole.Mage ? Mathf.Min(preferredRange, attackRange) : Mathf.Max(.8f, attackRange * .82f);
+                Vector3 destination = BattlefieldTactics.FormationPoint(this, PredictedHeroPosition(.32f), formationRange);
                 if (GuardPillar != null) destination = ClampToGuardZone(destination);
                 float stoppingDistance = role == MonsterRole.Mage
                     ? Mathf.Max(0.2f, Mathf.Min(preferredRange, attackRange) - 0.25f)
@@ -569,8 +607,9 @@ public class MonsterAI : MonoBehaviour
         if (distance <= desiredRange) approaching = false;
         if (approaching)
         {
-            Vector3 destination = heroTarget.transform.position;
-            if (GuardPillar != null) destination = ClampToGuardZone(destination);
+            float formationRange = role == MonsterRole.Mage ? Mathf.Min(preferredRange, attackRange) : Mathf.Max(.8f, attackRange * .82f);
+                Vector3 destination = BattlefieldTactics.FormationPoint(this, PredictedHeroPosition(.32f), formationRange);
+                if (GuardPillar != null) destination = ClampToGuardZone(destination);
             MoveTo(destination, Mathf.Max(0.2f, desiredRange - 0.25f));
             return;
         }
@@ -609,6 +648,7 @@ public class MonsterAI : MonoBehaviour
             if (retreatPath == null) retreatPath = new NavMeshPath();
             if (!agent.CalculatePath(hit.position, retreatPath) || retreatPath.status != NavMeshPathStatus.PathComplete) continue;
             float score = FlatDistance(hit.position, heroTarget.transform.position);
+            score -= BattlefieldTactics.SpacingPenalty(this, hit.position, allySpacing);
             foreach (MonsterAI ally in ActiveMonsters)
                 if (ally != null && ally != this && ally.IsAlive)
                     score -= Mathf.Max(0, 1.5f - FlatDistance(hit.position, ally.transform.position)) * 2;
@@ -639,11 +679,7 @@ public class MonsterAI : MonoBehaviour
             damage *= 1.2f;
 
         Vector3 push = (heroTarget.transform.position - transform.position).normalized;
-        if (role == MonsterRole.Mage)
-            MagicProjectile.Spawn(transform.position + Vector3.up * 1.25f, heroTarget, this, damage, knockbackForce, mageProjectilePrefab);
-        else
-            heroTarget.TakeDamage(damage, this, push * knockbackForce, heavy);
-    }
+        if (role == MonsterRole.Mage)`r`n        {`r`n            GameAudioController.Instance?.PlayMagic();`r`n            MagicProjectile.Spawn(transform.position + Vector3.up * 1.25f, heroTarget, this, damage, knockbackForce, mageProjectilePrefab);`r`n        }`r`n        else`r`n        {`r`n            GameAudioController.Instance?.PlayMeleeHit();`r`n            heroTarget.TakeDamage(damage, this, push * knockbackForce, heavy);`r`n        }
 
     private void CastMageSpecial()
     {
@@ -660,7 +696,7 @@ public class MonsterAI : MonoBehaviour
 
         if (heroTarget != null && heroTarget.IsAlive && FlatDistance(transform.position, heroTarget.transform.position) <= attackRange + 1.5f)
         {
-            MagicProjectile.SpawnLightning(lightningPrefab, transform.position + Vector3.up * 1.35f, heroTarget.transform.position + Vector3.up);
+            GameAudioController.Instance?.PlayMagic();`r`n            MagicProjectile.SpawnLightning(lightningPrefab, transform.position + Vector3.up * 1.35f, heroTarget.transform.position + Vector3.up);
             Vector3 push = (heroTarget.transform.position - transform.position).normalized;
             heroTarget.TakeDamage(specialDamage, this, push * (knockbackForce + 0.8f), true);
         }
@@ -728,8 +764,7 @@ public class MonsterAI : MonoBehaviour
         if (agent != null) agent.enabled = false;
         foreach (Collider c in GetComponentsInChildren<Collider>()) c.enabled = false;
 
-        Trigger("Die");
-        if (dropExperience)
+        Trigger("Die");`r`n        GameAudioController.Instance?.PlayMonsterDeath();`r`n        if (dropExperience)
             ExperienceOrb.Spawn(experienceOrbPrefab, transform.position, GetXPValue());
         StartCoroutine(DeathRoutine());
     }
@@ -852,5 +887,114 @@ public class MonsterAI : MonoBehaviour
     {
         a.y = b.y = 0f;
         return Vector3.Distance(a, b);
+    }
+}
+
+
+
+
+/// <summary>
+/// Shared, allocation-free tactical information used by Hero and monster utility AI.
+/// It turns individual actions into coordinated positioning: spacing, focus pressure and role formation.
+/// </summary>
+public static class BattlefieldTactics
+{
+    public static int CountAlliesNear(MonsterAI self, Vector3 point, float radius)
+    {
+        int count = 0;
+        float radiusSqr = radius * radius;
+        foreach (MonsterAI ally in MonsterAI.ActiveMonsters)
+        {
+            if (ally == null || !ally.IsAlive || ally == self) continue;
+            Vector3 delta = ally.transform.position - point; delta.y = 0f;
+            if (delta.sqrMagnitude <= radiusSqr) count++;
+        }
+        return count;
+    }
+
+    public static float FocusPressure(HeroBotAI hero)
+    {
+        if (hero == null || !hero.IsAlive) return 0f;
+        int nearby = CountAlliesNear(null, hero.transform.position, 4.5f);
+        return Mathf.Clamp01(nearby / 4f);
+    }
+
+    public static Vector3 FormationPoint(MonsterAI self, HeroBotAI hero, float range)
+    {
+        return FormationPoint(self, hero != null ? hero.transform.position : self.transform.position, range);
+    }
+
+    public static Vector3 FormationPoint(MonsterAI self, Vector3 center, float range)
+    {
+        // Stable per-unit slots prevent all monsters from stacking in one point.
+        float baseAngle = self.role switch
+        {
+            MonsterRole.Tank => 0f,
+            MonsterRole.Mage => 110f,
+            MonsterRole.Assassin => -110f,
+            _ => 180f
+        };
+        float variation = Mathf.Repeat(self.GetInstanceID() * 47.31f, 38f) - 19f;
+        Vector3 direction = Quaternion.Euler(0f, baseAngle + variation, 0f) * self.transform.forward;
+        direction.y = 0f;
+        if (direction.sqrMagnitude < .01f) direction = Vector3.forward;
+        return center + direction.normalized * range;
+    }
+
+    public static float SpacingPenalty(MonsterAI self, Vector3 point, float desiredSpacing)
+    {
+        int crowding = CountAlliesNear(self, point, desiredSpacing);
+        return crowding * 5f;
+    }
+}
+
+/// <summary>Authored world-space indicator for a monster's tactical intent. Runtime changes text only.</summary>
+public sealed class MonsterTacticalIndicator : MonoBehaviour
+{
+    public MonsterAI monster;
+    public TMP_Text intentText;
+    public SpriteRenderer bubble;
+    public Vector3 worldOffset = new(0f, 2.9f, 0f);
+    public float fadeSpeed = 8f;
+    private Camera viewCamera;
+    private string lastIntent;
+
+    void Awake()
+    {
+        if (monster == null) monster = GetComponentInParent<MonsterAI>();
+        viewCamera = Camera.main;
+        SetIntent(monster != null ? monster.CurrentTacticalAction : MonsterUtilityAction.Idle);
+    }
+
+    void LateUpdate()
+    {
+        if (monster == null || !monster.IsAlive) { gameObject.SetActive(false); return; }
+        SetIntent(monster.CurrentTacticalAction);
+        transform.position = monster.transform.position + worldOffset;
+        if (viewCamera == null) viewCamera = Camera.main;
+        if (viewCamera != null) transform.rotation = Quaternion.LookRotation(viewCamera.transform.forward, viewCamera.transform.up);
+    }
+
+    public void SetIntent(MonsterUtilityAction action)
+    {
+        string intent = action switch
+        {
+            MonsterUtilityAction.Advance => "→ FLANK",
+            MonsterUtilityAction.Attack => "! STRIKE",
+            MonsterUtilityAction.Retreat => "← FALL BACK",
+            MonsterUtilityAction.MageSpecial => "✦ CAST",
+            MonsterUtilityAction.ReturnToGuard => "⌂ GUARD",
+            _ => "… THINK"
+        };
+        if (intent == lastIntent) return;
+        lastIntent = intent;
+        if (intentText != null) intentText.text = intent;
+        if (bubble != null) bubble.color = action switch
+        {
+            MonsterUtilityAction.Retreat => new Color(1f,.54f,.18f,.95f),
+            MonsterUtilityAction.MageSpecial => new Color(.32f,.8f,1f,.95f),
+            MonsterUtilityAction.Attack => new Color(1f,.3f,.22f,.95f),
+            _ => new Color(.9f,.92f,.78f,.92f)
+        };
     }
 }

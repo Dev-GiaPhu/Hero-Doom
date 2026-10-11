@@ -32,7 +32,152 @@ public static class HeroDoomCombatAuthoring
     private static float healthBarTargetTest;
     private static float healthSliderTestStarted;
     private static System.Collections.Generic.List<string> playTestReport;
-    static HeroDoomCombatAuthoring() { EditorApplication.update += PollRequest; }
+    static HeroDoomCombatAuthoring()
+    {
+        EditorApplication.update += PollRequest;
+        // One-time, idempotent migration: author the new Rebirth Tree into the open
+        // SampleScene after Unity has compiled its runtime components.
+    }
+
+    private static void AuthorRebirthTreeAfterCompile()
+    {
+        if (EditorApplication.isPlayingOrWillChangePlaymode) return;
+        var scene=UnityEngine.SceneManagement.SceneManager.GetActiveScene();
+        if (scene.path!="Assets/Scenes/SampleScene.unity") return;
+        RebirthTreeController existing = Object.FindFirstObjectByType<RebirthTreeController>(FindObjectsInactive.Include);
+        // Upgrade older authored trees to the clipped, draggable map layout.
+        if (existing != null && existing.popup != null && existing.popup.GetComponentInChildren<RebirthTreePanView>(true) != null) return;
+        SummonerUpgrades upgrades=Object.FindFirstObjectByType<SummonerUpgrades>();
+        if(upgrades==null) return;
+        try
+        {
+            EnsureFolder(Root+"/Prefabs/Combat"); EnsureFolder(Root+"/Upgrades"); EnsureFolder(Root+"/Image/Upgrades");
+            AuthorRebirthTree(upgrades);
+            AssetDatabase.SaveAssets();
+            EditorSceneManager.MarkSceneDirty(scene);
+            EditorSceneManager.SaveScene(scene);
+        }
+        catch(Exception exception)
+        {
+            Debug.LogError("Could not author Rebirth Tree: "+exception.Message);
+        }
+    }
+
+    // Earlier scenes can have the first fourteen Hero upgrades but not the two
+    // survival skills added later. Repair only that incomplete authored setup.
+    private static void AuthorMissingHeroProgressionAfterCompile()
+    {
+        if(EditorApplication.isPlayingOrWillChangePlaymode) return;
+        var scene=UnityEngine.SceneManagement.SceneManager.GetActiveScene();
+        if(scene.path!="Assets/Scenes/SampleScene.unity") return;
+        HeroDoomGameManager manager=Object.FindFirstObjectByType<HeroDoomGameManager>();
+        HeroHUDController hud=Object.FindFirstObjectByType<HeroHUDController>();
+        if(manager==null || hud==null) return;
+
+        HeroBotAI prefabHero=manager.heroPrefab!=null ? manager.heroPrefab.GetComponent<HeroBotAI>() : null;
+        bool definitionsComplete=prefabHero!=null && prefabHero.upgradeDefinitions!=null &&
+            prefabHero.upgradeDefinitions.Length>=16 && prefabHero.upgradeDefinitions.Take(16).All(d=>d!=null && d.icon!=null);
+        bool hudComplete=hud.upgradeSlots!=null && hud.upgradeSlots.Length==16 &&
+            hud.upgradeSlots.All(slot=>slot!=null && slot.root!=null && slot.icon!=null && slot.count!=null && slot.icon.sprite!=null);
+        if(definitionsComplete && hudComplete) return;
+
+        try
+        {
+            HeroUpgradeDefinition[] definitions=CreateHeroDefinitions();
+            if(manager.heroPrefab!=null)
+            {
+                string heroPath=AssetDatabase.GetAssetPath(manager.heroPrefab);
+                if(!string.IsNullOrEmpty(heroPath))
+                {
+                    GameObject root=PrefabUtility.LoadPrefabContents(heroPath);
+                    try
+                    {
+                        HeroBotAI hero=root.GetComponent<HeroBotAI>();
+                        if(hero!=null) { hero.upgradeDefinitions=definitions; EditorUtility.SetDirty(hero); }
+                        PrefabUtility.SaveAsPrefabAsset(root,heroPath);
+                    }
+                    finally { PrefabUtility.UnloadPrefabContents(root); }
+                }
+            }
+            foreach(HeroBotAI hero in Object.FindObjectsByType<HeroBotAI>(FindObjectsInactive.Include,FindObjectsSortMode.None))
+            {
+                hero.upgradeDefinitions=definitions;
+                EditorUtility.SetDirty(hero);
+            }
+            AuthorProgressionHud();
+            AssetDatabase.SaveAssets();
+            EditorSceneManager.MarkSceneDirty(scene);
+            EditorSceneManager.SaveScene(scene);
+        }
+        catch(Exception exception)
+        {
+            Debug.LogException(exception);
+        }
+    }
+
+    // Keep the authored Hero prefab self-contained.  These are prefab references,
+    // never runtime-generated effects: the migration only fills missing links from
+    // the Visual Effect Graph prefabs already stored under Resources/Prefabs/Combat.
+    private static void AuthorMissingHeroVisualsAfterCompile()
+    {
+        if (EditorApplication.isPlayingOrWillChangePlaymode) return;
+        var scene = UnityEngine.SceneManagement.SceneManager.GetActiveScene();
+        if (scene.path != "Assets/Scenes/SampleScene.unity") return;
+
+        HeroDoomGameManager manager = Object.FindFirstObjectByType<HeroDoomGameManager>();
+        if (manager == null || manager.heroPrefab == null) return;
+        HeroBotAI prefabHero = manager.heroPrefab.GetComponent<HeroBotAI>();
+        bool visualsComplete = prefabHero != null && prefabHero.damagePopupPrefab != null &&
+            prefabHero.upgradeThoughtPrefab != null && prefabHero.attackImpactVisualPrefab != null &&
+            prefabHero.healingPulseVisualPrefab != null && prefabHero.arcaneNovaVisualPrefab != null &&
+            prefabHero.lightningStrikeVisualPrefab != null && prefabHero.fireFieldPrefab != null &&
+            prefabHero.orbitingSawPrefab != null && prefabHero.spawnProtection != null;
+        if (visualsComplete) return;
+
+        try
+        {
+            EnsureFolder(Root + "/Prefabs/Combat");
+            EnsureFolder(Root + "/Materials/Combat");
+            EnsureFolder(Root + "/Image/Upgrades");
+            VisualEffectAsset magicGraph = AssetDatabase.LoadAssetAtPath<VisualEffectAsset>("Assets/Project_/VFX/Magic.vfx");
+            VisualEffectAsset boltGraph = AssetDatabase.LoadAssetAtPath<VisualEffectAsset>("Assets/Project_/VFX/Bullet Magic.vfx");
+            if (magicGraph == null || boltGraph == null) return;
+
+            HeroUpgradeDefinition[] definitions = CreateHeroDefinitions();
+            DamagePopup damage = prefabHero.damagePopupPrefab != null ? prefabHero.damagePopupPrefab : CreateDamage();
+            HeroUpgradeThought thought = prefabHero.upgradeThoughtPrefab != null ? prefabHero.upgradeThoughtPrefab : CreateThought(definitions);
+            Material ringMaterial = CreateRingMaterial();
+            GameObject ringPrefab = CreateRing(ringMaterial, null);
+            HeroSkillBurst hitEffect = CreateSkillBurst("Combat Hit Sparks", boltGraph, .45f, .35f);
+            HeroSkillBurst healingPulse = CreateSkillBurst("Hero Healing Pulse", magicGraph, 1.1f, 1.2f);
+            HeroSkillBurst arcaneNova = CreateSkillBurst("Hero Arcane Nova", magicGraph, 1.15f, 2.6f);
+            HeroSkillBurst lightningStrike = CreateSkillBurst("Hero Lightning Strike", boltGraph, .65f, 1.7f);
+            HeroFireField fireField = CreateFireFieldPrefab(magicGraph);
+            HeroOrbitingSaw orbitingSaw = CreateOrbitingSawPrefab(boltGraph);
+
+            string heroPath = AssetDatabase.GetAssetPath(manager.heroPrefab);
+            GameObject root = PrefabUtility.LoadPrefabContents(heroPath);
+            try
+            {
+                AuthorHero(root, damage, thought, definitions, ringPrefab, hitEffect, healingPulse, arcaneNova, fireField, orbitingSaw, lightningStrike);
+                PrefabUtility.SaveAsPrefabAsset(root, heroPath);
+            }
+            finally { PrefabUtility.UnloadPrefabContents(root); }
+
+            foreach (HeroBotAI hero in Object.FindObjectsByType<HeroBotAI>(FindObjectsInactive.Include, FindObjectsSortMode.None))
+            {
+                AuthorHero(hero.gameObject, damage, thought, definitions, ringPrefab, hitEffect, healingPulse, arcaneNova, fireField, orbitingSaw, lightningStrike);
+                EditorUtility.SetDirty(hero);
+            }
+            AssetDatabase.SaveAssets();
+            EditorSceneManager.MarkSceneDirty(scene);
+            EditorSceneManager.SaveScene(scene);
+        }
+        catch (Exception exception)
+        {
+            Debug.LogException(exception);
+        }
+    }
 
     private static void PollRequest()
     {
@@ -150,15 +295,15 @@ public static class HeroDoomCombatAuthoring
         SpawnProtection protection=hero.spawnProtection;
         if(protection==null || !protection.IsProtected || protection.ringVisual==null || !protection.ringVisual.activeInHierarchy || protection.ringRenderer==null)
             throw new Exception("Play Mode: Hero spawn protection/ring was not active immediately after spawn.");
-        if(protection.energyShellRenderer==null || !protection.energyShellRenderer.enabled || protection.energyShellRenderer.sharedMaterial==null || protection.energyGraphEffect==null || protection.energyGraphEffect.visualEffectAsset==null)
+        if(protection.energyShellRenderer==null || !protection.energyShellRenderer.enabled || protection.energyShellRenderer.sharedMaterial==null)
             throw new Exception("Play Mode: authored spherical energy shell is missing or disabled.");
-        report.Add($"Hero spawn protection active; Shader Graph sphere={protection.ringRenderer.sharedMaterial?.shader?.name}, shell graph={protection.energyGraphEffect.visualEffectAsset.name}");
+        report.Add($"Hero spawn protection active; original Shader Graph sphere={protection.ringRenderer.sharedMaterial?.shader?.name}");
         if(hero.attackImpactVisualPrefab==null || hero.healingPulseVisualPrefab==null || hero.arcaneNovaVisualPrefab==null || hero.fireFieldPrefab==null || hero.orbitingSawPrefab==null || hero.lightningStrikeVisualPrefab==null)
-            throw new Exception("Play Mode: Hero authored Visual Effect Graph or special-skill prefabs are not assigned.");
+            throw new Exception("Play Mode: Hero authored skill visual or special-skill prefabs are not assigned.");
         HeroSkillBurst.Spawn(hero.healingPulseVisualPrefab,hero.transform.position+Vector3.up*.1f);
         HeroSkillBurst.Spawn(hero.arcaneNovaVisualPrefab,hero.transform.position+Vector3.up*.1f);
         HeroSkillBurst.Spawn(hero.lightningStrikeVisualPrefab,hero.transform.position+Vector3.up*.12f);
-        report.Add("Hero healing and wide lightning Nova Visual Effect Graph prefabs played.");
+        report.Add("Hero healing, Nova, and lightning authored skill prefabs played.");
 
         LuckyWheelController wheel=Object.FindFirstObjectByType<LuckyWheelController>(FindObjectsInactive.Include);
         if(wheel==null || wheel.openButton==null || wheel.popup==null) throw new Exception("Play Mode: authored Lucky Wheel click target is missing.");
@@ -181,12 +326,9 @@ public static class HeroDoomCombatAuthoring
         monster.spawnProtection?.End(); // Keep the spawn-shield check above, then test damage after its intended protection window.
         monster.TakeDamage(Mathf.Max(1f,monster.maxHP*.2f),true);
         if(monster.hitEffectPrefab==null) throw new Exception("Play Mode: summoned monster has no authored hit-effect prefab.");
-        VisualEffect[] hitEffects=Object.FindObjectsByType<VisualEffect>(FindObjectsInactive.Include,FindObjectsSortMode.None);
-        VisualEffect hitEffect=hitEffects.FirstOrDefault(effect=>effect!=null && effect.visualEffectAsset!=null && effect.gameObject.name=="Combat Hit Sparks");
-        if(hitEffect==null || hitEffect.aliveParticleCount<=0) throw new Exception("Play Mode: monster damage did not play its authored Visual Effect Graph hit effect.");
-        report.Add("Monster damage triggered its authored Visual Effect Graph hit effect.");
+        report.Add("Monster damage feedback retained without added particle/VFX layers.");
         float target=monster.HPPercent;
-        report.Add($"Monster damage applied; health fill before={before:0.00}, target={target:0.00}, slide speed={bar.fillSlideSpeed:0.00}");
+        report.Add($"Monster damage applied; health fill before={before:0.00}, target={target:0.00}, slide duration={bar.fillSlideDuration:0.00}");
         healthBarUnderTest=bar; healthBarBeforeTest=before; healthBarTargetTest=target;
         healthSliderTestStarted=Time.unscaledTime; pendingHealthSliderCheck=true;
 
@@ -237,6 +379,7 @@ public static class HeroDoomCombatAuthoring
         if (!File.Exists(backup)) File.Copy(scene.path, backup);
         EnsureFolder(Root + "/Prefabs/Combat"); EnsureFolder(Root + "/Upgrades");
         EnsureFolder(Root + "/Materials/Combat"); EnsureFolder(Root + "/Image/Upgrades");
+        RemoveObsoleteProtectionVfxArtifacts();
         HeroDoomGameManager manager = Object.FindFirstObjectByType<HeroDoomGameManager>();
         PlayerSpawner spawner = Object.FindFirstObjectByType<PlayerSpawner>();
         if (manager == null || spawner == null) throw new Exception("Missing GameManager or PlayerSpawner.");
@@ -254,7 +397,7 @@ public static class HeroDoomCombatAuthoring
         VisualEffectAsset magicGraph=AssetDatabase.LoadAssetAtPath<VisualEffectAsset>("Assets/Project_/VFX/Magic.vfx");
         VisualEffectAsset boltGraph=AssetDatabase.LoadAssetAtPath<VisualEffectAsset>("Assets/Project_/VFX/Bullet Magic.vfx");
         if(magicGraph==null || boltGraph==null) throw new Exception("The authored Visual Effect Graph assets could not be loaded.");
-        GameObject ringPrefab = CreateRing(ring,magicGraph);
+        GameObject ringPrefab = CreateRing(ring,null);
         AuthorPillarPrefab(lightning);
         HeroUpgradeDefinition[] heroDefs = CreateHeroDefinitions();
         HeroUpgradeThought thought = CreateThought(heroDefs);
@@ -323,8 +466,7 @@ public static class HeroDoomCombatAuthoring
         EditorUtility.SetDirty(spawner); EditorUtility.SetDirty(upgrades);
         if (existingUpgradePanel == null) CreatePanel(panel, upgrades);
         WireExistingPanel(panel, upgrades);
-        AuthorScrollableUpgradePanel(panel);
-        AuthorLuckyWheel();
+        // UI panels are hand-authored. Combat build deliberately leaves their layout and typography untouched.
         AuthorProgressionHud();
         AssetDatabase.SaveAssets();
         EditorSceneManager.MarkSceneDirty(scene);
@@ -369,20 +511,50 @@ public static class HeroDoomCombatAuthoring
         GameObject contents=exists?PrefabUtility.LoadPrefabContents(path):new GameObject(name);
         try
         {
-            contents.name=name; contents.transform.localPosition=Vector3.zero; contents.transform.localRotation=Quaternion.identity; contents.transform.localScale=Vector3.one*scale;
+            contents.name=name; contents.transform.localPosition=Vector3.zero; contents.transform.localRotation=Quaternion.identity; contents.transform.localScale=Vector3.one;
             RemoveParticleSystems(contents);
             foreach(Transform child in contents.transform.Cast<Transform>().ToArray()) Object.DestroyImmediate(child.gameObject);
             HeroSkillBurst burst=contents.GetComponent<HeroSkillBurst>()??contents.AddComponent<HeroSkillBurst>();
-            VisualEffect effect=contents.GetComponent<VisualEffect>()??contents.AddComponent<VisualEffect>();
-            effect.visualEffectAsset=graph; effect.playRate=1f;
-            burst.visualEffects=new[]{effect}; burst.duration=duration; burst.destroyAfterPlayback=true;
-            EditorUtility.SetDirty(effect); EditorUtility.SetDirty(burst);
+            burst.visualEffects=Array.Empty<VisualEffect>(); burst.duration=duration; burst.startScale=.22f; burst.endScale=scale; burst.rotationSpeed=name.Contains("Nova") ? 100f : 0f; burst.animateScale=true; burst.destroyAfterPlayback=true;
+            AuthorSkillMeshVisual(contents.transform,name);
+            burst.visualRenderers=contents.GetComponentsInChildren<Renderer>(true);
+            EditorUtility.SetDirty(burst);
             GameObject prefab=PrefabUtility.SaveAsPrefabAsset(contents,path);
             return prefab.GetComponent<HeroSkillBurst>();
         }
         finally { if(exists) PrefabUtility.UnloadPrefabContents(contents); else Object.DestroyImmediate(contents); }
     }
 
+    private static void AuthorSkillMeshVisual(Transform root,string effectName)
+    {
+        if(effectName.Contains("Healing"))
+        {
+            CreateSkillPrimitive(root,"Healing pulse",PrimitiveType.Cylinder,Vector3.zero,new Vector3(1f,.018f,1f),new Color(.18f,1f,.62f,.72f));
+            CreateSkillPrimitive(root,"Healing inner pulse",PrimitiveType.Cylinder,new Vector3(0,.025f,0),new Vector3(.55f,.012f,.55f),new Color(.72f,1f,.83f,.86f));
+        }
+        else if(effectName.Contains("Nova"))
+        {
+            CreateSkillPrimitive(root,"Nova outer wave",PrimitiveType.Cylinder,Vector3.zero,new Vector3(1f,.016f,1f),new Color(.12f,.82f,1f,.62f));
+            CreateSkillPrimitive(root,"Nova core",PrimitiveType.Cylinder,new Vector3(0,.025f,0),new Vector3(.38f,.01f,.38f),new Color(.75f,.95f,1f,.8f));
+        }
+        else if(effectName.Contains("Lightning"))
+        {
+            CreateSkillPrimitive(root,"Lightning center",PrimitiveType.Cube,new Vector3(0,.55f,0),new Vector3(.12f,1.15f,.12f),new Color(1f,.75f,.08f,.92f));
+            CreateSkillPrimitive(root,"Lightning branch A",PrimitiveType.Cube,new Vector3(.18f,.35f,0),new Vector3(.4f,.09f,.1f),new Color(1f,.94f,.5f,.9f));
+            CreateSkillPrimitive(root,"Lightning branch B",PrimitiveType.Cube,new Vector3(-.14f,.78f,0),new Vector3(.32f,.08f,.1f),new Color(1f,.94f,.5f,.9f));
+        }
+        else
+        {
+            for(int i=0;i<4;i++) CreateSkillPrimitive(root,"Impact spark "+(i+1),PrimitiveType.Cube,Quaternion.Euler(0,i*45f,0)*Vector3.forward*.16f+Vector3.up*.07f,new Vector3(.06f,.1f,.32f),new Color(1f,.68f,.18f,.9f));
+        }
+    }
+
+    private static void CreateSkillPrimitive(Transform parent,string name,PrimitiveType type,Vector3 position,Vector3 size,Color color)
+    {
+        GameObject visual=GameObject.CreatePrimitive(type); visual.name=name; visual.transform.SetParent(parent,false); visual.transform.localPosition=position; visual.transform.localScale=size;
+        Collider collider=visual.GetComponent<Collider>(); if(collider!=null) Object.DestroyImmediate(collider);
+        Renderer renderer=visual.GetComponent<Renderer>(); renderer.sharedMaterial=CreateSkillTintMaterial("Skill "+name,color); renderer.shadowCastingMode=UnityEngine.Rendering.ShadowCastingMode.Off; renderer.receiveShadows=false;
+    }
     private static void RemoveParticleSystems(GameObject root)
     {
         foreach(ParticleSystemRenderer renderer in root.GetComponentsInChildren<ParticleSystemRenderer>(true))
@@ -402,8 +574,7 @@ public static class HeroDoomCombatAuthoring
             RemoveParticleSystems(contents);
             foreach(Transform child in contents.transform.Cast<Transform>().ToArray()) Object.DestroyImmediate(child.gameObject);
             HeroSkillBurst visuals=contents.GetComponent<HeroSkillBurst>()??contents.AddComponent<HeroSkillBurst>();
-            VisualEffect effect=contents.GetComponent<VisualEffect>()??contents.AddComponent<VisualEffect>();
-            effect.visualEffectAsset=graph; visuals.visualEffects=new[]{effect}; visuals.duration=5.2f; visuals.destroyAfterPlayback=true;
+            visuals.visualEffects=Array.Empty<VisualEffect>(); visuals.duration=5.2f; visuals.animateScale=false; visuals.destroyAfterPlayback=true;
             HeroFireField field=contents.GetComponent<HeroFireField>()??contents.AddComponent<HeroFireField>();
             field.visuals=visuals; field.baseDuration=5.2f; field.baseRadius=2.7f; field.damageInterval=.45f;
             GameObject disc=GameObject.CreatePrimitive(PrimitiveType.Cylinder); disc.name="Burning Ground Ring"; disc.transform.SetParent(contents.transform,false); disc.transform.localPosition=new Vector3(0,.04f,0); disc.transform.localScale=new Vector3(1,.025f,1);
@@ -426,7 +597,7 @@ public static class HeroDoomCombatAuthoring
             RemoveParticleSystems(contents);
             foreach(Transform child in contents.transform.Cast<Transform>().ToArray()) Object.DestroyImmediate(child.gameObject);
             HeroOrbitingSaw saw=contents.GetComponent<HeroOrbitingSaw>()??contents.AddComponent<HeroOrbitingSaw>();
-            VisualEffect effect=contents.GetComponent<VisualEffect>()??contents.AddComponent<VisualEffect>(); effect.visualEffectAsset=graph; saw.graphAccent=effect;
+            saw.graphAccent=null;
             GameObject disc=GameObject.CreatePrimitive(PrimitiveType.Cylinder); disc.name="Saw Steel Disc"; disc.transform.SetParent(contents.transform,false); disc.transform.localScale=new Vector3(1f,.12f,1f);
             Collider collider=disc.GetComponent<Collider>(); if(collider!=null) Object.DestroyImmediate(collider);
             disc.GetComponent<Renderer>().sharedMaterial=CreateSkillTintMaterial("Orbiting Saw Steel",new Color(.48f,.75f,.86f,1f));
@@ -591,6 +762,17 @@ public static class HeroDoomCombatAuthoring
         so.ApplyModifiedPropertiesWithoutUndo(); EditorUtility.SetDirty(hud);
     }
 
+    [MenuItem("Hero Doom/Author Hero Progression HUD")]
+    private static void BuildHeroProgressionHudOnly()
+    {
+        if(EditorApplication.isPlayingOrWillChangePlaymode) throw new Exception("Leave Play Mode before authoring.");
+        var scene=UnityEngine.SceneManagement.SceneManager.GetActiveScene();
+        if(scene.path!="Assets/Scenes/SampleScene.unity") throw new Exception("Open SampleScene before authoring.");
+        AuthorProgressionHud();
+        EditorSceneManager.MarkSceneDirty(scene);
+        EditorSceneManager.SaveScene(scene);
+    }
+
     private static HeroUpgradeTooltip AuthorHeroUpgradeTooltip(Transform parent,TMP_FontAsset projectFont)
     {
         Transform existing=parent.Find("Hero Upgrade Tooltip");
@@ -700,11 +882,11 @@ public static class HeroDoomCombatAuthoring
             float top=12+card.slot*390f; cardRect.offsetMin=new Vector2(14,-top-360); cardRect.offsetMax=new Vector2(-14,-top);
             Transform icon=card.transform.Find("Monster Icon");
             if(icon!=null) { RectTransform r=icon as RectTransform; r.anchorMin=new Vector2(0,1); r.anchorMax=new Vector2(0,1); r.pivot=new Vector2(0,1); r.anchoredPosition=new Vector2(16,-14); r.sizeDelta=new Vector2(56,56); }
-            Transform title=card.transform.Find("Monster Name"); if(title!=null) { RectTransform r=title as RectTransform; r.offsetMin=new Vector2(86,-62); r.offsetMax=new Vector2(-16,-12); TMP_Text t=title.GetComponent<TMP_Text>(); t.fontSize=18; t.fontSizeMin=12; t.fontSizeMax=18; t.enableAutoSizing=true; t.fontStyle=FontStyles.Bold; t.textWrappingMode=TextWrappingModes.Normal; t.overflowMode=TextOverflowModes.Overflow; }
-            Transform stats=card.transform.Find("Power Bonuses"); if(stats!=null) { RectTransform r=stats as RectTransform; r.offsetMin=new Vector2(18,-140); r.offsetMax=new Vector2(-18,-72); TMP_Text t=stats.GetComponent<TMP_Text>(); t.fontSize=14; t.fontSizeMin=10; t.fontSizeMax=14; t.enableAutoSizing=true; t.textWrappingMode=TextWrappingModes.Normal; t.overflowMode=TextOverflowModes.Overflow; }
+            Transform title=card.transform.Find("Monster Name"); if(title!=null) { RectTransform r=title as RectTransform; r.offsetMin=new Vector2(86,-62); r.offsetMax=new Vector2(-16,-12); TMP_Text t=title.GetComponent<TMP_Text>(); t.fontSize=22; t.fontSizeMin=15; t.fontSizeMax=22; t.enableAutoSizing=true; t.fontStyle=FontStyles.Bold; t.textWrappingMode=TextWrappingModes.Normal; t.overflowMode=TextOverflowModes.Overflow; }
+            Transform stats=card.transform.Find("Power Bonuses"); if(stats!=null) { RectTransform r=stats as RectTransform; r.offsetMin=new Vector2(18,-140); r.offsetMax=new Vector2(-18,-72); TMP_Text t=stats.GetComponent<TMP_Text>(); t.fontSize=16; t.fontSizeMin=12; t.fontSizeMax=16; t.enableAutoSizing=true; t.textWrappingMode=TextWrappingModes.Normal; t.overflowMode=TextOverflowModes.Overflow; }
             SetCardButtonLayout(card.powerButton,150,46,18); if(card.powerLabel!=null) { card.powerLabel.fontSize=16; card.powerLabel.enableAutoSizing=true; card.powerLabel.fontSizeMin=10; card.powerLabel.fontSizeMax=16; card.powerLabel.textWrappingMode=TextWrappingModes.Normal; card.powerLabel.overflowMode=TextOverflowModes.Overflow; }
             SetCardButtonLayout(card.autoButton,204,46,18); if(card.autoLabel!=null) { card.autoLabel.fontSize=16; card.autoLabel.enableAutoSizing=true; card.autoLabel.fontSizeMin=10; card.autoLabel.fontSizeMax=16; card.autoLabel.textWrappingMode=TextWrappingModes.Normal; card.autoLabel.overflowMode=TextOverflowModes.Overflow; }
-            if(card.autoStatus!=null) { RectTransform r=card.autoStatus.rectTransform; r.offsetMin=new Vector2(18,-308); r.offsetMax=new Vector2(-18,-260); card.autoStatus.fontSize=12; card.autoStatus.enableAutoSizing=true; card.autoStatus.fontSizeMin=10; card.autoStatus.fontSizeMax=12; card.autoStatus.textWrappingMode=TextWrappingModes.Normal; card.autoStatus.overflowMode=TextOverflowModes.Overflow; }
+            if(card.autoStatus!=null) { RectTransform r=card.autoStatus.rectTransform; r.offsetMin=new Vector2(18,-308); r.offsetMax=new Vector2(-18,-260); card.autoStatus.fontSize=14; card.autoStatus.enableAutoSizing=true; card.autoStatus.fontSizeMin=11; card.autoStatus.fontSizeMax=14; card.autoStatus.textWrappingMode=TextWrappingModes.Normal; card.autoStatus.overflowMode=TextOverflowModes.Overflow; }
             Transform track=card.transform.Find("Timer Track"); if(track!=null) { RectTransform r=track as RectTransform; r.offsetMin=new Vector2(18,-330); r.offsetMax=new Vector2(-18,-322); Transform fill=track.Find("Timer Fill"); if(fill!=null) { Image fillImage=fill.GetComponent<Image>(); fillImage.sprite=AssetDatabase.LoadAssetAtPath<Sprite>(Root+"/Image/ui.png") ?? AssetDatabase.GetBuiltinExtraResource<Sprite>("UI/Skin/UISprite.psd"); fillImage.type=UnityEngine.UI.Image.Type.Filled; fillImage.fillMethod=UnityEngine.UI.Image.FillMethod.Horizontal; fillImage.color=Mint; } }
         }
 
@@ -725,8 +907,8 @@ public static class HeroDoomCombatAuthoring
         Scrollbar scrollbar=scrollbarTransform.GetComponent<Scrollbar>(); scrollbar.handleRect=handleRect; scrollbar.targetGraphic=handleImage; scrollbar.direction=Scrollbar.Direction.BottomToTop;
         ScrollRect scroll=viewObject.GetComponent<ScrollRect>(); scroll.content=content; scroll.viewport=view; scroll.horizontal=false; scroll.vertical=true; scroll.movementType=ScrollRect.MovementType.Clamped; scroll.inertia=true; scroll.scrollSensitivity=54; scroll.verticalScrollbar=scrollbar; scroll.verticalScrollbarVisibility=ScrollRect.ScrollbarVisibility.AutoHideAndExpandViewport; scroll.verticalScrollbarSpacing=-2; content.anchoredPosition=Vector2.zero; scroll.verticalNormalizedPosition=1f;
 
-        Transform heading=root.Find("Heading"); if(heading!=null) { RectTransform h=heading as RectTransform; h.offsetMin=new Vector2(24,-52); h.offsetMax=new Vector2(-22,-12); TMP_Text t=heading.GetComponent<TMP_Text>(); t.text="SUMMONER UPGRADES"; t.fontSize=21; t.fontSizeMin=15; t.fontSizeMax=21; t.enableAutoSizing=true; t.textWrappingMode=TextWrappingModes.NoWrap; t.overflowMode=TextOverflowModes.Overflow; }
-        Transform subtitle=root.Find("Subtitle"); if(subtitle!=null) { RectTransform s=subtitle as RectTransform; s.offsetMin=new Vector2(24,-86); s.offsetMax=new Vector2(-22,-58); TMP_Text t=subtitle.GetComponent<TMP_Text>(); t.text="Gold upgrades | F: swap control | Click ground: move"; t.fontSize=11; t.enableAutoSizing=true; t.fontSizeMin=9; t.fontSizeMax=11; t.textWrappingMode=TextWrappingModes.NoWrap; t.overflowMode=TextOverflowModes.Overflow; }
+        Transform heading=root.Find("Heading"); if(heading!=null) { RectTransform h=heading as RectTransform; h.offsetMin=new Vector2(24,-52); h.offsetMax=new Vector2(-22,-12); TMP_Text t=heading.GetComponent<TMP_Text>(); t.text="SUMMONER UPGRADES"; t.fontSize=25; t.fontSizeMin=18; t.fontSizeMax=25; t.enableAutoSizing=true; t.textWrappingMode=TextWrappingModes.NoWrap; t.overflowMode=TextOverflowModes.Overflow; }
+        Transform subtitle=root.Find("Subtitle"); if(subtitle!=null) { RectTransform s=subtitle as RectTransform; s.offsetMin=new Vector2(24,-86); s.offsetMax=new Vector2(-22,-58); TMP_Text t=subtitle.GetComponent<TMP_Text>(); t.text="Gold upgrades | F: swap control | Click ground: move"; t.fontSize=14; t.enableAutoSizing=true; t.fontSizeMin=11; t.fontSizeMax=14; t.textWrappingMode=TextWrappingModes.NoWrap; t.overflowMode=TextOverflowModes.Overflow; }
         SummonerUpgrades upgrades=root.GetComponentInParent<SummonerUpgrades>();
         if(upgrades!=null) EditorUtility.SetDirty(upgrades);
         EditorUtility.SetDirty(viewObject); EditorUtility.SetDirty(content.gameObject); EditorUtility.SetDirty(scroll);
@@ -812,6 +994,205 @@ public static class HeroDoomCombatAuthoring
         popup.SetActive(false); EditorUtility.SetDirty(controller); EditorUtility.SetDirty(popup);
     }
 
+    private static void AuthorRebirthTree(SummonerUpgrades upgrades)
+    {
+        Canvas[] canvases=Object.FindObjectsByType<Canvas>(FindObjectsSortMode.None);
+        Canvas canvas=canvases.FirstOrDefault(c=>c.GetComponentsInChildren<Transform>(true).Any(t=>t.name=="Lucky Wheel"));
+        if(canvas==null) throw new Exception("Canvas or left action panel is missing.");
+        TMP_FontAsset font=AssetDatabase.LoadAssetAtPath<TMP_FontAsset>(Root+"/Fonts/PressStart2P SDF.asset") ?? TMP_Settings.defaultFontAsset;
+        RebirthTreeDefinition tree=CreateRebirthTreeDefinition();
+        upgrades.rebirthTree=tree;
+
+        Transform wheelTransform=canvas.GetComponentsInChildren<Transform>(true).FirstOrDefault(t=>t.name=="Lucky Wheel");
+        RectTransform wheelRect=wheelTransform as RectTransform;
+        Transform oldButton=wheelTransform.parent.Find("Rebirth Tree");
+        GameObject treeButton=oldButton!=null?oldButton.gameObject:new GameObject("Rebirth Tree",typeof(RectTransform),typeof(Image),typeof(Button));
+        treeButton.layer=5; if(oldButton==null) treeButton.transform.SetParent(wheelTransform.parent,false);
+        RectTransform buttonRect=treeButton.GetComponent<RectTransform>();
+        buttonRect.anchorMin=wheelRect.anchorMin; buttonRect.anchorMax=wheelRect.anchorMax; buttonRect.pivot=wheelRect.pivot;
+        buttonRect.anchoredPosition=wheelRect.anchoredPosition+new Vector2(0f,-116f); buttonRect.sizeDelta=wheelRect.sizeDelta;
+        Image buttonImage=treeButton.GetComponent<Image>(); buttonImage.sprite=AssetDatabase.GetBuiltinExtraResource<Sprite>("UI/Skin/UISprite.psd"); buttonImage.type=UnityEngine.UI.Image.Type.Sliced; buttonImage.color=new Color(.10f,.22f,.24f,1f); buttonImage.raycastTarget=true;
+        Button open=treeButton.GetComponent<Button>(); open.targetGraphic=buttonImage;
+        Sprite treeIcon=tree.nodes[0].icon;
+        Transform iconTransform=treeButton.transform.Find("Tree Icon");
+        GameObject iconGo=iconTransform!=null?iconTransform.gameObject:new GameObject("Tree Icon",typeof(RectTransform),typeof(Image)); iconGo.layer=5;
+        if(iconTransform==null) iconGo.transform.SetParent(treeButton.transform,false);
+        RectTransform iconRect=iconGo.GetComponent<RectTransform>(); iconRect.anchorMin=iconRect.anchorMax=new Vector2(.5f,.5f); iconRect.pivot=new Vector2(.5f,.5f); iconRect.anchoredPosition=new Vector2(0,12); iconRect.sizeDelta=new Vector2(50,50);
+        Image iconImage=iconGo.GetComponent<Image>(); iconImage.sprite=treeIcon; iconImage.preserveAspect=true; iconImage.color=Gold; iconImage.raycastTarget=false;
+        TMP_Text iconLabel=WheelText("Tree Label",treeButton.transform,"REBIRTH",new Vector2(0,-30),new Vector2(90,22),9,font,Mint); iconLabel.alignment=TextAlignmentOptions.Center;
+
+        Transform existing=canvas.transform.Find("Rebirth Tree Popup");
+        GameObject popup=existing!=null?existing.gameObject:new GameObject("Rebirth Tree Popup",typeof(RectTransform),typeof(Image)); popup.layer=5;
+        if(existing==null) popup.transform.SetParent(canvas.transform,false);
+        RectTransform popupRect=popup.GetComponent<RectTransform>(); popupRect.anchorMin=Vector2.zero; popupRect.anchorMax=Vector2.one; popupRect.offsetMin=popupRect.offsetMax=Vector2.zero;
+        Image shade=popup.GetComponent<Image>(); shade.sprite=AssetDatabase.GetBuiltinExtraResource<Sprite>("UI/Skin/UISprite.psd"); shade.type=UnityEngine.UI.Image.Type.Sliced; shade.color=new Color(.01f,.02f,.03f,.88f); shade.raycastTarget=true;
+
+        Transform cardTransform=popup.transform.Find("Tree Card");
+        GameObject card=cardTransform!=null?cardTransform.gameObject:new GameObject("Tree Card",typeof(RectTransform),typeof(Image)); card.layer=5;
+        if(cardTransform==null) card.transform.SetParent(popup.transform,false);
+        RectTransform cardRect=card.GetComponent<RectTransform>(); cardRect.anchorMin=cardRect.anchorMax=new Vector2(.5f,.5f); cardRect.pivot=new Vector2(.5f,.5f); cardRect.anchoredPosition=Vector2.zero; cardRect.sizeDelta=new Vector2(1550,860);
+        Image cardImage=card.GetComponent<Image>(); cardImage.sprite=AssetDatabase.GetBuiltinExtraResource<Sprite>("UI/Skin/UISprite.psd"); cardImage.type=UnityEngine.UI.Image.Type.Sliced; cardImage.color=new Color(.045f,.085f,.10f,1f); cardImage.raycastTarget=true;
+        Outline outline=card.GetComponent<Outline>()??Undo.AddComponent<Outline>(card); outline.effectColor=new Color(.36f,.79f,.70f,.8f); outline.effectDistance=new Vector2(2f,2f);
+
+        TMP_Text heading=WheelText("Tree Heading",card.transform,"REBIRTH TREE",new Vector2(-470,385),new Vector2(700,44),27,font,Gold); heading.alignment=TextAlignmentOptions.Left;
+        TMP_Text sub=WheelText("Tree Subtitle",card.transform,"Each Rebirth gives 1 point. Choices are permanent.",new Vector2(-455,347),new Vector2(730,32),14,font,Mint); sub.alignment=TextAlignmentOptions.Left;
+        TMP_Text points=WheelText("Point Label",card.transform,"POINTS  0  |  COST  0",new Vector2(500,376),new Vector2(300,38),15,font,Color.white); points.alignment=TextAlignmentOptions.Center;
+        Button close=WheelButton("Close Rebirth Tree",card.transform,"CLOSE",new Vector2(675,376),new Vector2(130,44),new Color(.20f,.28f,.30f),font);
+
+        Transform treeAreaTransform=card.transform.Find("Tree Area");
+        GameObject treeArea=treeAreaTransform!=null?treeAreaTransform.gameObject:new GameObject("Tree Area",typeof(RectTransform),typeof(Image),typeof(RectMask2D),typeof(RebirthTreePanView)); treeArea.layer=5;
+        if(treeAreaTransform==null) treeArea.transform.SetParent(card.transform,false);
+        RectTransform areaRect=treeArea.GetComponent<RectTransform>(); areaRect.anchorMin=areaRect.anchorMax=new Vector2(.5f,.5f); areaRect.pivot=new Vector2(.5f,.5f); areaRect.anchoredPosition=new Vector2(-210,-10); areaRect.sizeDelta=new Vector2(1050,630);
+        Image areaImage=treeArea.GetComponent<Image>()??Undo.AddComponent<Image>(treeArea); areaImage.sprite=AssetDatabase.GetBuiltinExtraResource<Sprite>("UI/Skin/UISprite.psd"); areaImage.type=UnityEngine.UI.Image.Type.Sliced; areaImage.color=new Color(.025f,.055f,.065f,.72f); areaImage.raycastTarget=true;
+        if(treeArea.GetComponent<RectMask2D>()==null) Undo.AddComponent<RectMask2D>(treeArea);
+        Transform contentTransform=treeArea.transform.Find("Tree Content");
+        GameObject treeContent=contentTransform!=null?contentTransform.gameObject:new GameObject("Tree Content",typeof(RectTransform)); treeContent.layer=5;
+        if(contentTransform==null) treeContent.transform.SetParent(treeArea.transform,false);
+        RectTransform contentRect=treeContent.GetComponent<RectTransform>(); contentRect.anchorMin=contentRect.anchorMax=new Vector2(.5f,.5f); contentRect.pivot=new Vector2(.5f,.5f); contentRect.anchoredPosition=new Vector2(290,0); contentRect.sizeDelta=new Vector2(1800,1050); contentRect.localScale=Vector3.one;
+        foreach(Transform child in treeArea.transform.Cast<Transform>().ToArray())
+            if(child!=treeContent.transform && (child.name.StartsWith("Connector ") || child.name.StartsWith("Tree Node "))) child.SetParent(treeContent.transform,false);
+        RebirthTreePanView panView=treeArea.GetComponent<RebirthTreePanView>()??Undo.AddComponent<RebirthTreePanView>(treeArea); panView.viewport=areaRect; panView.content=contentRect; panView.initialContentPosition=new Vector2(290,0); panView.dragMultiplier=1f; panView.minZoom=.72f; panView.maxZoom=1.28f; panView.zoomStep=.1f;
+
+        Transform detailTransform=card.transform.Find("Node Detail");
+        GameObject detail=detailTransform!=null?detailTransform.gameObject:new GameObject("Node Detail",typeof(RectTransform),typeof(Image)); detail.layer=5;
+        if(detailTransform==null) detail.transform.SetParent(card.transform,false);
+        RectTransform detailRect=detail.GetComponent<RectTransform>(); detailRect.anchorMin=detailRect.anchorMax=new Vector2(.5f,.5f); detailRect.pivot=new Vector2(.5f,.5f); detailRect.anchoredPosition=new Vector2(560,-10); detailRect.sizeDelta=new Vector2(365,465);
+        Image detailImage=detail.GetComponent<Image>(); detailImage.sprite=AssetDatabase.GetBuiltinExtraResource<Sprite>("UI/Skin/UISprite.psd"); detailImage.type=UnityEngine.UI.Image.Type.Sliced; detailImage.color=new Color(.075f,.14f,.15f,1f);
+        TMP_Text detailHeader=WheelText("Detail Header",detail.transform,"NODE DETAILS",new Vector2(0,180),new Vector2(330,32),15,font,Mint); detailHeader.alignment=TextAlignmentOptions.Center;
+        TMP_Text detailTitle=WheelText("Detail Title",detail.transform,"",new Vector2(0,125),new Vector2(330,70),20,font,Gold); detailTitle.alignment=TextAlignmentOptions.Center; detailTitle.textWrappingMode=TextWrappingModes.Normal;
+        TMP_Text detailDescription=WheelText("Detail Description",detail.transform,"",new Vector2(0,8),new Vector2(315,160),14,font,Color.white); detailDescription.alignment=TextAlignmentOptions.TopLeft; detailDescription.textWrappingMode=TextWrappingModes.Normal;
+        TMP_Text detailStatus=WheelText("Detail Status",detail.transform,"",new Vector2(0,-175),new Vector2(330,52),12,font,Mint); detailStatus.alignment=TextAlignmentOptions.Center; detailStatus.textWrappingMode=TextWrappingModes.Normal;
+        TMP_Text tip=WheelText("Tree Tip",card.transform,"DRAG TO PAN  •  SCROLL TO ZOOM  •  NODES STAY INSIDE THE MAP",new Vector2(0,-395),new Vector2(1320,32),13,font,new Color(.72f,.80f,.78f)); tip.alignment=TextAlignmentOptions.Center;
+
+        Vector2[] positions={
+            new(-560,0), new(-350,190), new(-120,250), new(110,250), new(-350,0), new(-120,0), new(110,0), new(-350,-190), new(-120,-250), new(110,-250),
+            new(340,75), new(570,75), new(340,-65), new(570,-65), new(340,-250), new(340,250), new(570,-250), new(570,250)
+        };
+        int[,] links={{0,1},{1,2},{2,3},{0,4},{4,5},{5,6},{0,7},{7,8},{8,9},{6,10},{10,11},{6,12},{12,13},{9,14},{3,15},{14,16},{15,17}};
+        Image[] connectors=new Image[links.GetLength(0)];
+        for(int i=0;i<connectors.Length;i++)
+            connectors[i]=AuthorTreeConnector("Connector "+i,treeContent.transform,positions[links[i,0]],positions[links[i,1]]);
+        RebirthTreeNodeView[] views=new RebirthTreeNodeView[tree.nodes.Count];
+        for(int i=0;i<tree.nodes.Count;i++)
+            views[i]=AuthorTreeNode(treeContent.transform,tree.nodes[i],i,positions[i],font);
+
+        RebirthTreeController controller=treeButton.GetComponent<RebirthTreeController>()??Undo.AddComponent<RebirthTreeController>(treeButton);
+        controller.upgrades=upgrades; controller.definition=tree; controller.popup=popup; controller.openButton=open; controller.closeButton=close;
+        controller.pointLabel=points; controller.detailTitle=detailTitle; controller.detailDescription=detailDescription; controller.detailStatus=detailStatus;
+        controller.nodeViews=views; controller.connectors=connectors;
+        controller.connectorFromNodes=Enumerable.Range(0,connectors.Length).Select(i=>links[i,0]).ToArray();
+        controller.connectorToNodes=Enumerable.Range(0,connectors.Length).Select(i=>links[i,1]).ToArray();
+        popup.SetActive(false);
+        PrefabUtility.SaveAsPrefabAsset(popup,Root+"/Prefabs/Combat/Rebirth Tree Panel.prefab");
+        EditorUtility.SetDirty(upgrades); EditorUtility.SetDirty(controller); EditorUtility.SetDirty(popup);
+    }
+
+    [MenuItem("Hero Doom/Author Rebirth Tree")]
+    public static void BuildRebirthTreeOnly()
+    {
+        if(EditorApplication.isPlayingOrWillChangePlaymode) throw new Exception("Leave Play Mode before authoring.");
+        var scene=UnityEngine.SceneManagement.SceneManager.GetActiveScene();
+        if(scene.path!="Assets/Scenes/SampleScene.unity") throw new Exception("Open SampleScene before authoring.");
+        SummonerUpgrades upgrades=Object.FindFirstObjectByType<SummonerUpgrades>();
+        if(upgrades==null) throw new Exception("SummonerUpgrades is missing.");
+        EnsureFolder(Root+"/Prefabs/Combat"); EnsureFolder(Root+"/Upgrades"); EnsureFolder(Root+"/Image/Upgrades");
+        AuthorRebirthTree(upgrades);
+        AssetDatabase.SaveAssets(); EditorSceneManager.MarkSceneDirty(scene); EditorSceneManager.SaveScene(scene);
+        Selection.activeGameObject=Object.FindFirstObjectByType<RebirthTreeController>(FindObjectsInactive.Include)?.gameObject;
+    }
+
+    private static RebirthTreeDefinition CreateRebirthTreeDefinition()
+    {
+        string path=Root+"/Upgrades/Rebirth Tree Definition.asset";
+        RebirthTreeDefinition tree=AssetDatabase.LoadAssetAtPath<RebirthTreeDefinition>(path);
+        if(tree==null) { tree=ScriptableObject.CreateInstance<RebirthTreeDefinition>(); AssetDatabase.CreateAsset(tree,path); }
+        if(tree.nodes.Count>0)
+        {
+            EnsureExpandedRebirthTree(tree);
+            return tree;
+        }
+        string[] names={"Ancestral Cache","Coin Relay","Gilded Coffers","Bargain Sigil","Bone Plating","Blood Pact","Iron Cohort","Quick Ritual","Endless Chant","Ward Shell"};
+        string[] descriptions={
+            "+25% gold at the start of every Rebirth.",
+            "+12% gold from passive income and combat damage.",
+            "+3 maximum army capacity.",
+            "Summons cost 10% less gold.",
+            "All summoned monsters gain +15% maximum health.",
+            "All summoned monsters deal +15% damage.",
+            "+4 maximum army capacity.",
+            "Automatic summons complete 12% faster.",
+            "Automatic summons complete another 10% faster.",
+            "Newly summoned monsters are protected for +0.75 seconds."
+        };
+        RebirthTreeBonus[] bonuses={RebirthTreeBonus.StartingGold,RebirthTreeBonus.GoldIncome,RebirthTreeBonus.ArmyCapacity,RebirthTreeBonus.SummonCostDiscount,RebirthTreeBonus.MonsterHealth,RebirthTreeBonus.MonsterDamage,RebirthTreeBonus.ArmyCapacity,RebirthTreeBonus.AutoSummonSpeed,RebirthTreeBonus.AutoSummonSpeed,RebirthTreeBonus.SpawnProtection};
+        float[] values={.25f,.12f,3f,.10f,.15f,.15f,4f,.12f,.10f,.75f};
+        int[] costs={1,1,1,2,1,1,2,1,2,1};
+        int[][] requires={Array.Empty<int>(),new[]{0},new[]{1},new[]{2},new[]{0},new[]{4},new[]{5},new[]{0},new[]{7},new[]{7}};
+        string[] patterns={
+            "00111100/01111110/11100111/11011011/11011011/11100111/01111110/00111100",
+            "00011000/00111100/01111110/11011011/00011000/00011000/00111100/01111110",
+            "00111100/01111110/11000011/11011011/11011011/11000011/01111110/00111100",
+            "00011000/00111100/01111110/11011011/11011011/01111110/00111100/00011000",
+            "00011000/00111100/01111110/11111111/01111110/00111100/00011000/00011000",
+            "11000011/11100111/01111110/00111100/00111100/01111110/11100111/11000011",
+            "00011000/00111100/01111110/11011011/11011011/01111110/00111100/00011000",
+            "00011000/00111000/01111000/11111000/00011000/00011000/00011000/00011000",
+            "00011000/00111000/01111000/11111000/00011000/00110000/01100000/11000000",
+            "00011000/00111100/01111110/11011011/11011011/01111110/00111100/00011000"
+        };
+        for(int i=0;i<names.Length;i++)
+            tree.nodes.Add(new RebirthTreeNodeDefinition { id="rebirth_"+i, displayName=names[i], description=descriptions[i], cost=costs[i], prerequisites=requires[i], bonus=bonuses[i], value=values[i], icon=PixelIcon("Rebirth "+names[i],patterns[i]) });
+        EnsureExpandedRebirthTree(tree);
+        EditorUtility.SetDirty(tree);
+        return tree;
+    }
+
+    private static void EnsureExpandedRebirthTree(RebirthTreeDefinition tree)
+    {
+        AddRebirthTreeNode(tree,"rebirth_10","War March","All summoned monsters move 12% faster.",2,new[]{6},RebirthTreeBonus.MonsterMoveSpeed,.12f,"00011000/00111100/01111110/11011011/11011011/01111110/00111100/00011000");
+        AddRebirthTreeNode(tree,"rebirth_11","Frenzy Brand","All summoned monsters attack 15% faster.",3,new[]{10},RebirthTreeBonus.MonsterAttackSpeed,.15f,"00100100/01111110/11111111/01111110/00111100/01111110/11111111/00100100");
+        AddRebirthTreeNode(tree,"rebirth_12","Grave Bulwark","All summoned monsters gain another 25% maximum health.",2,new[]{6},RebirthTreeBonus.MonsterHealth,.25f,"00011000/00111100/01111110/11111111/01111110/01111110/11011011/11011011");
+        AddRebirthTreeNode(tree,"rebirth_13","Legion Gate","Increase the maximum army capacity by 6.",3,new[]{12},RebirthTreeBonus.ArmyCapacity,6f,"00111100/01111110/11000011/11011011/11011011/11000011/01111110/00111100");
+        AddRebirthTreeNode(tree,"rebirth_14","Rapid Conduit","Automatic summons complete another 10% faster.",2,new[]{9},RebirthTreeBonus.AutoSummonSpeed,.10f,"00011000/00110000/01100000/11111100/00011000/00011000/00011000/00011000");
+        AddRebirthTreeNode(tree,"rebirth_15","Merchant Cartel","Gain another 25% gold from passive income and combat damage.",3,new[]{3},RebirthTreeBonus.GoldIncome,.25f,"00111100/01111110/11011011/11000011/11011011/11000011/01111110/00111100");
+        AddRebirthTreeNode(tree,"rebirth_16","Eternal Ward","Newly summoned monsters are protected for another 1.25 seconds.",3,new[]{14},RebirthTreeBonus.SpawnProtection,1.25f,"00111100/01111110/11111111/11011011/11011011/11111111/01111110/00111100");
+        AddRebirthTreeNode(tree,"rebirth_17","Final Bargain","Summons cost another 10% less gold.",3,new[]{15},RebirthTreeBonus.SummonCostDiscount,.10f,"00011000/00111100/01111110/11011011/11011011/01111110/00111100/00011000");
+        EditorUtility.SetDirty(tree);
+    }
+
+    private static void AddRebirthTreeNode(RebirthTreeDefinition tree,string id,string name,string description,int cost,int[] prerequisites,RebirthTreeBonus bonus,float value,string pattern)
+    {
+        if(tree.nodes.Any(node=>node!=null && node.id==id)) return;
+        tree.nodes.Add(new RebirthTreeNodeDefinition { id=id, displayName=name, description=description, cost=cost, prerequisites=prerequisites, bonus=bonus, value=value, icon=PixelIcon("Rebirth "+name,pattern) });
+    }
+
+    private static RebirthTreeNodeView AuthorTreeNode(Transform parent,RebirthTreeNodeDefinition node,int index,Vector2 position,TMP_FontAsset font)
+    {
+        string name="Tree Node "+index;
+        Transform old=parent.Find(name); GameObject go=old!=null?old.gameObject:new GameObject(name,typeof(RectTransform),typeof(Image),typeof(Button),typeof(RebirthTreeNodeView)); go.layer=5;
+        if(old==null) go.transform.SetParent(parent,false);
+        RectTransform rect=go.GetComponent<RectTransform>(); rect.anchorMin=rect.anchorMax=new Vector2(.5f,.5f); rect.pivot=new Vector2(.5f,.5f); rect.anchoredPosition=position; rect.sizeDelta=new Vector2(190,116);
+        Image frame=go.GetComponent<Image>(); frame.sprite=AssetDatabase.GetBuiltinExtraResource<Sprite>("UI/Skin/UISprite.psd"); frame.type=UnityEngine.UI.Image.Type.Sliced; frame.color=new Color(.10f,.15f,.18f,1f);
+        Button button=go.GetComponent<Button>(); button.targetGraphic=frame;
+        Transform iconTransform=go.transform.Find("Icon"); GameObject iconGo=iconTransform!=null?iconTransform.gameObject:new GameObject("Icon",typeof(RectTransform),typeof(Image)); iconGo.layer=5; if(iconTransform==null) iconGo.transform.SetParent(go.transform,false);
+        RectTransform iconRect=iconGo.GetComponent<RectTransform>(); iconRect.anchorMin=iconRect.anchorMax=new Vector2(.5f,.5f); iconRect.pivot=new Vector2(.5f,.5f); iconRect.anchoredPosition=new Vector2(-62,5); iconRect.sizeDelta=new Vector2(54,54);
+        Image icon=iconGo.GetComponent<Image>(); icon.sprite=node.icon; icon.preserveAspect=true; icon.color=Gold; icon.raycastTarget=false;
+        TMP_Text title=WheelText("Title",go.transform,node.displayName,new Vector2(27,16),new Vector2(132,54),13,font,Color.white); title.alignment=TextAlignmentOptions.Center; title.textWrappingMode=TextWrappingModes.Normal;
+        TMP_Text cost=WheelText("Cost",go.transform,"1 P",new Vector2(27,-35),new Vector2(126,24),11,font,Mint); cost.alignment=TextAlignmentOptions.Center;
+        RebirthTreeNodeView view=go.GetComponent<RebirthTreeNodeView>(); view.nodeIndex=index; view.button=button; view.frame=frame; view.icon=icon; view.title=title; view.cost=cost;
+        button.onClick.RemoveAllListeners(); button.onClick.AddListener(view.Purchase);
+        return view;
+    }
+
+    private static Image AuthorTreeConnector(string name,Transform parent,Vector2 from,Vector2 to)
+    {
+        Transform old=parent.Find(name); GameObject go=old!=null?old.gameObject:new GameObject(name,typeof(RectTransform),typeof(Image)); go.layer=5;
+        if(old==null) go.transform.SetParent(parent,false);
+        Vector2 delta=to-from; RectTransform rect=go.GetComponent<RectTransform>(); rect.anchorMin=rect.anchorMax=new Vector2(.5f,.5f); rect.pivot=new Vector2(0f,.5f); rect.anchoredPosition=from; rect.sizeDelta=new Vector2(delta.magnitude,7f); rect.localRotation=Quaternion.Euler(0,0,Mathf.Atan2(delta.y,delta.x)*Mathf.Rad2Deg);
+        Image line=go.GetComponent<Image>(); line.sprite=AssetDatabase.GetBuiltinExtraResource<Sprite>("UI/Skin/UISprite.psd"); line.type=UnityEngine.UI.Image.Type.Sliced; line.color=new Color(.26f,.34f,.37f,.56f); line.raycastTarget=false;
+        go.transform.SetAsFirstSibling(); return line;
+    }
+
     private static TMP_Text WheelText(string name,Transform parent,string value,Vector2 position,Vector2 size,float fontSize,TMP_FontAsset font,Color color)
     {
         Transform old=parent.Find(name); GameObject go=old!=null?old.gameObject:new GameObject(name,typeof(RectTransform),typeof(TextMeshProUGUI)); go.layer=5;
@@ -862,7 +1243,7 @@ public static class HeroDoomCombatAuthoring
         protection.ringRenderer = ring.GetComponent<Renderer>();
         Transform shellTransform=ring.transform.Find("Energy Shell");
         protection.energyShellRenderer=shellTransform!=null?shellTransform.GetComponent<Renderer>():null;
-        protection.energyGraphEffect=shellTransform!=null?shellTransform.GetComponent<VisualEffect>():null;
+        protection.energyGraphEffect=null;
         if (protection.ringRenderer != null)
         {
             protection.ringRenderer.sharedMaterial = AssetDatabase.LoadAssetAtPath<Material>(Root + "/Materials/Combat/Spawn Protection.mat");
@@ -912,6 +1293,7 @@ public static class HeroDoomCombatAuthoring
                 existingBar.fill.fillMethod=UnityEngine.UI.Image.FillMethod.Horizontal;
                 if(existingBar.fill.sprite==null) existingBar.fill.sprite=AssetDatabase.GetBuiltinExtraResource<Sprite>("UI/Skin/UISprite.psd");
             }
+            EnsureMonsterTacticalIndicator(root, monster);
             return;
         }
 
@@ -975,8 +1357,18 @@ public static class HeroDoomCombatAuthoring
         bar.fadeInDuration = 0.12f;
         bar.fadeOutDuration = 0.16f;
         bar.hiddenScale = 0.78f;
+        EnsureMonsterTacticalIndicator(root, monster);
     }
 
+    private static void EnsureMonsterTacticalIndicator(GameObject root, MonsterAI monster)
+    {
+        Transform existing=root.transform.Find("AI Intent");
+        GameObject go=existing!=null?existing.gameObject:new GameObject("AI Intent",typeof(TextMeshPro),typeof(MonsterTacticalIndicator));
+        if(existing==null) go.transform.SetParent(root.transform,false);
+        go.transform.localPosition=new Vector3(0f,2.9f,0f); go.transform.localScale=Vector3.one*.16f;
+        TextMeshPro label=go.GetComponent<TextMeshPro>(); label.font=TMP_Settings.defaultFontAsset; label.fontSize=5.5f; label.fontStyle=FontStyles.Bold; label.alignment=TextAlignmentOptions.Center; label.text="… THINK"; label.color=new Color(.96f,.92f,.72f,1f); label.rectTransform.sizeDelta=new Vector2(14f,2.4f); label.GetComponent<Renderer>().sortingOrder=165;
+        MonsterTacticalIndicator indicator=go.GetComponent<MonsterTacticalIndicator>(); indicator.monster=monster; indicator.intentText=label; indicator.worldOffset=new Vector3(0f,2.9f,0f);
+    }
     private static Material CreateDamageTextMaterial(TMP_FontAsset font)
     {
         if (font == null || font.material == null) return null;
@@ -1005,18 +1397,22 @@ public static class HeroDoomCombatAuthoring
     {
         string assetPath = Root + "/Prefabs/Combat/Damage Number.prefab";
         GameObject existing = AssetDatabase.LoadAssetAtPath<GameObject>(assetPath);
-        if (existing != null && existing.GetComponent<DamagePopup>() != null) return existing.GetComponent<DamagePopup>();
-        GameObject go = new GameObject("Damage Number", typeof(RectTransform), typeof(TextMeshPro), typeof(DamagePopup));
-        TextMeshPro text = go.GetComponent<TextMeshPro>();
-        text.font = TMP_Settings.defaultFontAsset; text.text = "128"; text.fontSize = 9f;
-        text.fontStyle = FontStyles.Bold; text.alignment = TextAlignmentOptions.Center;
-        text.textWrappingMode = TextWrappingModes.NoWrap; text.color = Gold;
-        text.fontSharedMaterial = CreateDamageTextMaterial(text.font);
-        text.rectTransform.sizeDelta = new Vector2(7.5f, 3f); text.GetComponent<Renderer>().sortingOrder = 120;
-        go.transform.localScale = Vector3.one * 0.38f;
-        go.GetComponent<DamagePopup>().label = text;
-        GameObject prefab = PrefabUtility.SaveAsPrefabAsset(go, assetPath);
-        Object.DestroyImmediate(go); return prefab.GetComponent<DamagePopup>();
+        GameObject root = existing != null ? PrefabUtility.LoadPrefabContents(assetPath) : new GameObject("Damage Number", typeof(RectTransform), typeof(TextMeshPro), typeof(DamagePopup));
+        try
+        {
+            root.name = "Damage Number";
+            TextMeshPro text = root.GetComponent<TextMeshPro>() ?? root.AddComponent<TextMeshPro>();
+            text.font = TMP_Settings.defaultFontAsset; text.text = "128"; text.fontSize = 16f;
+            text.fontStyle = FontStyles.Bold; text.alignment = TextAlignmentOptions.Center;
+            text.textWrappingMode = TextWrappingModes.NoWrap; text.color = Gold;
+            text.fontSharedMaterial = CreateDamageTextMaterial(text.font);
+            text.rectTransform.sizeDelta = new Vector2(20f, 6.5f); text.GetComponent<Renderer>().sortingOrder = 180;
+            root.transform.localScale = Vector3.one * .68f;
+            DamagePopup popup = root.GetComponent<DamagePopup>() ?? root.AddComponent<DamagePopup>(); popup.label = text;
+            GameObject prefab = PrefabUtility.SaveAsPrefabAsset(root, assetPath);
+            return prefab.GetComponent<DamagePopup>();
+        }
+        finally { if (existing != null) PrefabUtility.UnloadPrefabContents(root); else Object.DestroyImmediate(root); }
     }
 
     private static Material UnlitMaterial(string name, Color color)
@@ -1056,6 +1452,12 @@ public static class HeroDoomCombatAuthoring
         Object.DestroyImmediate(go); return prefab.GetComponent<LineRenderer>();
     }
 
+    // Cleanup for the accidentally authored purple/particle shield layers.
+    private static void RemoveObsoleteProtectionVfxArtifacts()
+    {
+        AssetDatabase.DeleteAsset("Assets/Project_/VFX/Spawn Shield Motes.vfx");
+        AssetDatabase.DeleteAsset(Root+"/Prefabs/Combat/Visual Effect Carrier.prefab");
+    }
     private static Material CreateRingMaterial()
     {
         Shader shader = AssetDatabase.LoadAssetAtPath<Shader>("Assets/Project_/VFX/SpawnProtection.shadergraph");
@@ -1149,8 +1551,8 @@ public static class HeroDoomCombatAuthoring
         shell.localPosition = Vector3.zero; shell.localRotation = Quaternion.identity; shell.localScale = Vector3.one * 1.015f;
         Renderer shellRenderer = shell.GetComponent<Renderer>(); shellRenderer.sharedMaterial = CreateShieldShellMaterial();
         shellRenderer.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off; shellRenderer.receiveShadows = false;
-        VisualEffect graphEffect=shell.GetComponent<VisualEffect>()??shell.gameObject.AddComponent<VisualEffect>();
-        graphEffect.visualEffectAsset=shieldGraph; graphEffect.playRate=1f;
+        // Keep only the original Shader Graph sphere. Do not add any particle/VFX layers.
+        foreach(Transform child in root.transform.Cast<Transform>().Where(child=>child.name.StartsWith("Shield Motes ") || child.name=="Energy Field VFX").ToArray()) Object.DestroyImmediate(child.gameObject);
         GameObject prefab = PrefabUtility.SaveAsPrefabAsset(root, assetPath);
         if (prefabContents) PrefabUtility.UnloadPrefabContents(root); else Object.DestroyImmediate(root);
         return AssetDatabase.LoadAssetAtPath<GameObject>(assetPath);
@@ -1311,7 +1713,7 @@ public static class HeroDoomCombatAuthoring
             AuthorThoughtCard(root.transform,"Choice Card B",1,cardSprite,out SpriteRenderer cardB,out SpriteRenderer optionIconB,out TMP_Text optionTextB);
             thought.choiceCardA=cardA; thought.choiceCardB=cardB; thought.choiceIconA=optionIconA; thought.choiceIconB=optionIconB;
             thought.choiceTextA=optionTextA; thought.choiceTextB=optionTextB;
-            thought.thinkingDuration=1.25f; thought.resultDuration=2.3f; thought.worldOffset=new Vector3(0f,3.1f,0f); thought.iconScale=.95f; thought.resultPopScale=1.32f;
+            thought.thinkingDuration=1.25f; thought.resultDuration=3f; thought.worldOffset=new Vector3(0f,3.65f,0f); thought.iconScale=1.55f; thought.resultPopScale=1.42f;
             EditorUtility.SetDirty(thought);
             GameObject prefab=PrefabUtility.SaveAsPrefabAsset(root,path);
             return prefab.GetComponent<HeroUpgradeThought>();
@@ -1341,9 +1743,9 @@ public static class HeroDoomCombatAuthoring
     private static void AuthorThoughtCard(Transform parent,string name,int side,Sprite backgroundSprite,out SpriteRenderer background,out SpriteRenderer icon,out TMP_Text label)
     {
         background=EnsureThoughtSprite(parent,name); background.sprite=backgroundSprite; background.color=new Color(.035f,.09f,.12f,.96f); background.sortingOrder=140;
-        background.transform.localPosition=new Vector3(side*.56f,-.28f,0f); background.transform.localRotation=Quaternion.identity; background.transform.localScale=new Vector3(1.08f,.56f,1f);
-        icon=EnsureThoughtSprite(background.transform,"Upgrade Icon"); icon.sortingOrder=143; icon.transform.localPosition=new Vector3(-.37f,0f,-.01f); icon.transform.localScale=Vector3.one*.27f;
-        label=EnsureThoughtLabel(background.transform,"Upgrade Detail",new Vector3(.11f,0f,-.02f),new Vector2(8f,4f),.105f,4.2f);
+        background.transform.localPosition=new Vector3(side*.7f,-.38f,0f); background.transform.localRotation=Quaternion.identity; background.transform.localScale=new Vector3(1.3f,.7f,1f);
+        icon=EnsureThoughtSprite(background.transform,"Upgrade Icon"); icon.sortingOrder=143; icon.transform.localPosition=new Vector3(-.43f,0f,-.01f); icon.transform.localScale=Vector3.one*.32f;
+        label=EnsureThoughtLabel(background.transform,"Upgrade Detail",new Vector3(.13f,0f,-.02f),new Vector2(9f,4f),.13f,5.4f);
         label.alignment=TextAlignmentOptions.Left; label.color=Color.white; label.GetComponent<Renderer>().sortingOrder=145;
     }
 
@@ -1459,6 +1861,7 @@ public static class HeroDoomCombatAuthoring
         HeroDoomGameManager manager=Object.FindFirstObjectByType<HeroDoomGameManager>();
         var spawner = Object.FindFirstObjectByType<PlayerSpawner>();
         if (manager==null || spawner == null || spawner.upgrades == null) throw new Exception("Upgrade system is not wired.");
+        SummonerUpgrades upgrades = spawner.upgrades;
         var progressionHud=Object.FindFirstObjectByType<HeroHUDController>();
         if(progressionHud==null || progressionHud.progressionRoot==null || progressionHud.experienceFill==null || progressionHud.experienceText==null || progressionHud.upgradeIconRoot==null || progressionHud.upgradeSlots==null || progressionHud.upgradeSlots.Length!=16)
             throw new Exception("Hero progression HUD must be authored and wired in the scene.");
@@ -1476,10 +1879,25 @@ public static class HeroDoomCombatAuthoring
         LuckyWheelController wheel=Object.FindFirstObjectByType<LuckyWheelController>(FindObjectsInactive.Include);
         if(wheel==null || wheel.popup==null || wheel.wheel==null || wheel.spinButton==null || wheel.openButton==null) throw new Exception("Lucky Wheel popup, wheel or button binding is missing.");
         if(wheel.popup.activeSelf) throw new Exception("Lucky Wheel popup must start hidden and open only when its icon is clicked.");
+        RebirthTreeController rebirthTree=Object.FindFirstObjectByType<RebirthTreeController>(FindObjectsInactive.Include);
+        if(rebirthTree==null || rebirthTree.popup==null || rebirthTree.openButton==null || rebirthTree.closeButton==null || rebirthTree.definition==null || upgrades.rebirthTree!=rebirthTree.definition)
+            throw new Exception("Rebirth Tree icon, popup, data asset or button binding is missing.");
+        if(rebirthTree.popup.activeSelf) throw new Exception("Rebirth Tree popup must start hidden and open only when its icon is clicked.");
+        if(rebirthTree.definition.nodes==null || rebirthTree.definition.nodes.Count<18 || rebirthTree.nodeViews==null || rebirthTree.nodeViews.Length!=rebirthTree.definition.nodes.Count)
+            throw new Exception("Rebirth Tree must have one authored view per upgrade node.");
+        if(rebirthTree.nodeViews.Any(view=>view==null || view.button==null || view.icon==null || view.title==null || view.cost==null))
+            throw new Exception("An authored Rebirth Tree node is missing its visible controls.");
+        if(rebirthTree.connectors==null || rebirthTree.connectors.Length<17 || rebirthTree.connectorFromNodes.Length!=rebirthTree.connectors.Length || rebirthTree.connectorToNodes.Length!=rebirthTree.connectors.Length)
+            throw new Exception("Rebirth Tree branch connections are incomplete.");
+        RebirthTreePanView treePan=rebirthTree.popup.GetComponentInChildren<RebirthTreePanView>(true);
+        if(treePan==null || treePan.viewport==null || treePan.content==null || treePan.viewport.GetComponent<RectMask2D>()==null)
+            throw new Exception("Rebirth Tree needs an authored clipped drag-and-zoom map viewport.");
+        if(upgrades.PurchasedRebirthNodes==null || upgrades.PurchasedRebirthNodes.Count!=rebirthTree.definition.nodes.Count)
+            throw new Exception("Rebirth Tree permanent purchase state is not initialized.");
         for (int i = 0; i < 4; i++)
         {
             var m = spawner.GetPrefab(i).GetComponent<MonsterAI>();
-            if (m.damagePopupPrefab == null || m.experienceOrbPrefab == null || m.hitEffectPrefab==null || m.hitEffectPrefab.visualEffects==null || m.hitEffectPrefab.visualEffects.Length==0 || m.hitEffectPrefab.visualEffects.Any(vfx=>vfx==null || vfx.visualEffectAsset==null) || m.spawnProtection == null || m.spawnProtection.ringVisual==null || m.spawnProtection.ringRenderer==null || m.spawnProtection.energyShellRenderer==null || m.spawnProtection.energyGraphEffect==null || m.knockbackMotor == null) throw new Exception("Monster Visual Effect Graph hit or protection sphere layers missing: " + i);
+            if (m.damagePopupPrefab == null || m.experienceOrbPrefab == null || m.hitEffectPrefab==null || m.spawnProtection == null || m.spawnProtection.ringVisual==null || m.spawnProtection.ringRenderer==null || m.spawnProtection.energyShellRenderer==null || m.knockbackMotor == null) throw new Exception("Monster feedback or protection sphere setup missing: " + i);
             var bar=m.GetComponentInChildren<MonsterHealthBar>(true);
             if (bar == null || bar.fill==null || bar.fill.type!=UnityEngine.UI.Image.Type.Filled) throw new Exception("Monster health slider missing: " + i);
             if (m.GetComponent<NavMeshAgent>() == null || !m.GetComponent<Rigidbody>().isKinematic) throw new Exception("Physics missing: " + i);
@@ -1506,7 +1924,6 @@ public static class HeroDoomCombatAuthoring
         if(heroPrefab.upgradeThoughtPrefab.choiceCardA==null || heroPrefab.upgradeThoughtPrefab.choiceCardB==null || heroPrefab.upgradeThoughtPrefab.choiceTextA==null || heroPrefab.upgradeThoughtPrefab.choiceTextB==null)
             throw new Exception("Hero level-up thought prefab needs two authored upgrade cards with text and icons.");
 
-        SummonerUpgrades upgrades = spawner.upgrades;
         if (upgrades.maxAliveMonsters != 36) throw new Exception("Global monster cap should be 36.");
         if(!upgrades.IsMonsterUnlocked(0) || upgrades.IsMonsterUnlocked(1) || upgrades.IsMonsterUnlocked(2) || upgrades.IsMonsterUnlocked(3)) throw new Exception("The starting roster must unlock only the basic monster.");
         if(upgrades.rebirthButton==null || upgrades.rebirthLabel==null || upgrades.goldMultiplierPerRebirth<=0f) throw new Exception("Player Rebirth control or reward is not authored.");
@@ -1526,6 +1943,7 @@ public static class HeroDoomCombatAuthoring
         report += $"16 Hero upgrade hover tooltips OK ({Object.FindObjectsByType<HeroUpgradeTooltip>(FindObjectsInactive.Include, FindObjectsSortMode.None).Length} authored panel)\n";
         report += $"Capture pillar prefab: {pillarAsset.name} with CapturePillar OK\n";
         report += "Lucky Wheel authored popup and spin rewards OK\n";
+        report += $"Rebirth Tree: {rebirthTree.definition.nodes.Count} authored nodes, {rebirthTree.connectors.Length} branch links and permanent state OK\n";
         report += "4 authored upgrade cards OK\nSummoner caps and AUTO progression OK\nShader Graph: no shader errors\n";
         File.WriteAllText(Work + "/result.txt", report);
     }

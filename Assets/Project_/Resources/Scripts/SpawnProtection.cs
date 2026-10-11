@@ -23,10 +23,19 @@ public class SpawnProtection : MonoBehaviour
     private MaterialPropertyBlock shellProperties;
     private Vector3 ringBaseScale = Vector3.one;
     private float startedAt;
+    private float authoredDuration;
 
     void Awake()
     {
+        authoredDuration = duration;
         if (ringVisual != null) ringBaseScale = ringVisual.transform.localScale;
+    }
+
+    /// <summary>Applies a permanent summoner bonus without stacking it each time ordinary upgrades refresh.</summary>
+    public void SetBonusDuration(float bonusSeconds)
+    {
+        duration = Mathf.Max(0f, authoredDuration + Mathf.Max(0f, bonusSeconds));
+        if (IsProtected) Begin();
     }
 
     void OnEnable() { Begin(); }
@@ -43,9 +52,7 @@ public class SpawnProtection : MonoBehaviour
         }
         if (energyGraphEffect != null && duration > 0f && energyGraphEffect.visualEffectAsset != null)
         {
-            energyGraphEffect.Reinit();
-            energyGraphEffect.Play();
-            energyGraphEffect.SendEvent("OnPlay");
+            energyGraphEffect.Reinit(); energyGraphEffect.Play(); energyGraphEffect.SendEvent("OnPlay");
         }
         UpdateVisual();
     }
