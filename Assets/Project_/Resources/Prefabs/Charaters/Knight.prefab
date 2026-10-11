@@ -1673,24 +1673,24 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 2156aa2025f9743238b882118ff6ce7f, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  maxHP: 200
+  maxHP: 220
   currentHP: 0
   moveSpeed: 4
   rotationSpeed: 15
-  attackDamage: 20
+  attackDamage: 18
   attackRange: 2
-  attackCooldown: 1
+  attackCooldown: 0.95
   searchRadius: 20
-  armor: 0.05
-  basePickupRadius: 1.2
+  armor: 0.04
+  basePickupRadius: 1.5
   xpPickupCheckInterval: 0.08
   xpSeekRadius: 18
   xpLevelUrgencyWeight: 20
   damagePopupPrefab: {fileID: 4787979688686804833, guid: 5c45a40dd0ec92249a534a0fb1fca5bc, type: 3}
   spawnProtection: {fileID: 6368231454709210236}
   knockbackMotor: {fileID: 625317224649528735}
-  knockbackForce: 7
-  areaKnockbackForce: 9
+  knockbackForce: 6.5
+  areaKnockbackForce: 8.5
   decisionInterval: 0.25
   minimumActionCommitment: 0.8
   actionSwitchThreshold: 7
@@ -1698,9 +1698,14 @@ MonoBehaviour:
   combatWeight: 1
   experienceWeight: 1
   objectiveWeight: 0.75
-  targetRecheckInterval: 0.35
-  currentTargetPreference: 2
-  targetSwitchThreshold: 2.5
+  targetRecheckInterval: 0.28
+  currentTargetPreference: 2.5
+  targetSwitchThreshold: 3
+  tacticalRetreatHp: 0.58
+  surroundedThreatCount: 3
+  tacticalRepositionDistance: 3.4
+  tacticalDangerRadius: 6
+  tacticalPositionSamples: 8
   upgradeThoughtPrefab: {fileID: 3287217210318907029, guid: d817d368efde5a34c81d2284ad4ae427, type: 3}
   upgradeDefinitions:
   - {fileID: 11400000, guid: 5551bcea661d3eb48b894e9b2c424ce1, type: 2}

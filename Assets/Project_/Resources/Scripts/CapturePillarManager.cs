@@ -8,15 +8,15 @@ public class CapturePillarManager : MonoBehaviour
     [Header("Pillars")]
     [Min(1)] public int pillarCount = 3;
     public float captureRadius = 4f;
-    public float goldBonusPerCapturedPillar = 0.25f;
+    public float goldBonusPerCapturedPillar = 0.12f;
     public float relocateInterval = 120f;
     public float edgePadding = 12f;
     public InfiniteMapGenerator map;
     [Header("Faction bonuses per owned pillar")]
-    [Range(0f, 1f)] public float heroDamageBonusPerPillar = 0.12f;
-    [Range(0f, 1f)] public float monsterDamageBonusPerPillar = 0.12f;
-    [Range(0f, 0.5f)] public float heroHealthBonusPerPillar = 0.1f;
-    [Range(0f, 0.5f)] public float monsterHealthBonusPerPillar = 0.1f;
+    [Range(0f, 1f)] public float heroDamageBonusPerPillar = 0.08f;
+    [Range(0f, 1f)] public float monsterDamageBonusPerPillar = 0.08f;
+    [Range(0f, 0.5f)] public float heroHealthBonusPerPillar = 0.06f;
+    [Range(0f, 0.5f)] public float monsterHealthBonusPerPillar = 0.06f;
 
     private readonly List<CapturePillar> pillars = new();
     private float relocateTimer;

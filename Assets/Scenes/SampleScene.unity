@@ -12212,8 +12212,8 @@ MonoBehaviour:
   balanceText: {fileID: 569313677}
   costText: {fileID: 1959942130}
   resultText: {fileID: 1842605434}
-  baseSpinCost: 100
-  costGrowth: 1.2
+  baseSpinCost: 160
+  costGrowth: 1.16
   spinDuration: 3.2
 --- !u!1 &768658712
 GameObject:
@@ -21723,6 +21723,8 @@ GameObject:
   - component: {fileID: 1350396456}
   - component: {fileID: 1350396457}
   - component: {fileID: 1350396458}
+  - component: {fileID: 1350396459}
+  - component: {fileID: 1350396460}
   m_Layer: 0
   m_Name: GameManager
   m_TagString: Untagged
@@ -21743,13 +21745,13 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   monster1Prefab: {fileID: 4273521104092458544, guid: 18492b6b0c0bd2b419842985b06ab80c, type: 3}
-  monster1Cost: 10
+  monster1Cost: 12
   monster2Prefab: {fileID: 7849558439264195013, guid: 84466f446e74fc1448f85f2f4137a3f0, type: 3}
-  monster2Cost: 35
+  monster2Cost: 32
   monster3Prefab: {fileID: 5331539268546560949, guid: 908fd25bcbf78204ba2e63b9195f995d, type: 3}
-  monster3Cost: 65
+  monster3Cost: 68
   monster4Prefab: {fileID: 2007613504270089577, guid: c0ee1dd81d4a88740976bb1cec1e907d, type: 3}
-  monster4Cost: 90
+  monster4Cost: 85
   upgrades: {fileID: 1350396458}
   autoSpawnDistance: {x: 7, y: 11}
   autoSpawnAttempts: 8
@@ -21798,17 +21800,17 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   heroPrefab: {fileID: 7592019447709997584, guid: beda0f40c91354517862218b802ce9c4, type: 3}
-  baseHeroHP: 200
-  heroHPPerDeath: 75
+  baseHeroHP: 220
+  heroHPPerDeath: 45
   respawnDelay: 5
   respawnSearchRadius: 20
   respawnMinimumDistance: 4
   respawnRandomAttempts: 24
-  startingGold: 50
-  passiveGoldPerSecond: 0.35
-  goldPerDamage: 0.05
-  economySoftPressureGold: 1400
-  incomeAtSoftPressure: 0.68
+  startingGold: 60
+  passiveGoldPerSecond: 0.7
+  goldPerDamage: 0.1
+  economySoftPressureGold: 2200
+  incomeAtSoftPressure: 0.75
   map: {fileID: 403880879}
   playerSpawner: {fileID: 1350396452}
   pillarManager: {fileID: 1350396456}
@@ -21841,14 +21843,14 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   pillarCount: 3
   captureRadius: 4.5
-  goldBonusPerCapturedPillar: 0.18
+  goldBonusPerCapturedPillar: 0.12
   relocateInterval: 120
   edgePadding: 12
   map: {fileID: 403880879}
-  heroDamageBonusPerPillar: 0.12
-  monsterDamageBonusPerPillar: 0.12
-  heroHealthBonusPerPillar: 0.1
-  monsterHealthBonusPerPillar: 0.1
+  heroDamageBonusPerPillar: 0.08
+  monsterDamageBonusPerPillar: 0.08
+  heroHealthBonusPerPillar: 0.06
+  monsterHealthBonusPerPillar: 0.06
 --- !u!114 &1350396457
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -21890,8 +21892,16 @@ MonoBehaviour:
   armyCountLabel: {fileID: 2010360386}
   rebirthButton: {fileID: 721541999}
   rebirthLabel: {fileID: 1558895957}
-  rebirthStartingGold: 50
-  goldMultiplierPerRebirth: 0.12
+  rebirthStartingGold: 60
+  goldMultiplierPerRebirth: 0.15
+  baseRebirthPowerRequirement: 18
+  powerRequirementPerRebirth: 6
+  baseRebirthAutoRequirement: 4
+  autoRequirementPerRebirth: 2
+  baseHeroKillsRequirement: 2
+  heroKillsPerRebirth: 1
+  baseRunGoldRequirement: 2500
+  runGoldRequirementGrowth: 2.05
   rebirthTree: {fileID: 11400000, guid: 57d20a85cbae83d44ba0d7319932781b, type: 2}
   unlockedMonsters: 01000000
   rebirthCount: 0
@@ -21902,7 +21912,7 @@ MonoBehaviour:
   - {fileID: 11400000, guid: d765c2451c4434c449e8db06bf93fab4, type: 2}
   - {fileID: 11400000, guid: d9a3d30cb9cb48b46a496b0b424ae959, type: 2}
   - {fileID: 11400000, guid: 9a85f7fe5d1b87a4fa377052410da638, type: 2}
-  maxAliveMonsters: 36
+  maxAliveMonsters: 30
   minimumTimeBetweenAutoSpawns: 0.4
   failedSpawnRetryDelay: 1
   powerLevels: 00000000000000000000000000000000
@@ -32502,3 +32512,63 @@ SceneRoots:
   - {fileID: 705559070}
   - {fileID: 2109007258}
   - {fileID: 900100002}
+
+--- !u!114 &1350396459
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1350396451}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 84ded3429576cad4c88ce8bd2fe12935, type: 3}
+  m_Name:
+  m_EditorClassIdentifier:
+  backgroundMusic: {fileID: 8300000, guid: 0e0a26f366fa1654893b7352e2d67d68, type: 3}
+  clickSound: {fileID: 8300000, guid: b7acf7d9e05ab1c47bc69049546b3ce9, type: 3}
+  meleeHitSound: {fileID: 8300000, guid: e916d2af88397da4eb34cb12c565b0d9, type: 3}
+  magicSound: {fileID: 8300000, guid: 437fa5360c40c244595c693a26ca511a, type: 3}
+  magicVariants:
+  - {fileID: 8300000, guid: b0e768b405c07074da6d873336e8dc90, type: 3}
+  - {fileID: 8300000, guid: bfdb06821477a7b428e402a2ac0128af, type: 3}
+  summonSound: {fileID: 8300000, guid: 227cb07259934864b9a56c5398088554, type: 3}
+  monsterDeathSound: {fileID: 8300000, guid: 05f8e96cd39de0a4c8790c4df26fe253, type: 3}
+  rewardSound: {fileID: 8300000, guid: 94bd74bf594caf4459615542f9f41394, type: 3}
+  noMoneySound: {fileID: 8300000, guid: 958b6052427f8b84bae7e671ede8c190, type: 3}
+  musicSource: {fileID: 0}
+  sfxSource: {fileID: 0}
+  masterVolume: 1
+  musicVolume: 0.32
+  sfxVolume: 0.8
+  uiVolume: 0.55
+  combatVolume: 0.48
+  rewardVolume: 0.62
+  meleeCooldown: 0.08
+  magicCooldown: 0.13
+  deathCooldown: 0.09
+--- !u!114 &1350396460
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1350396451}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 2f71c8a184ed47c0a7310f7cc68be4e2, type: 3}
+  m_Name:
+  m_EditorClassIdentifier:
+  settingsPanel: {fileID: 0}
+  masterVolumeSlider: {fileID: 0}
+  musicVolumeSlider: {fileID: 0}
+  sfxVolumeSlider: {fileID: 0}
+  fullscreenToggle: {fileID: 0}
+  qualityDropdown: {fileID: 0}
+  frameRateDropdown: {fileID: 0}
+  closeButton: {fileID: 0}
+  escapeTogglesSettings: 1
+  pauseGameWhenOpen: 1
+  useFallbackOverlayWhenNoPanel: 1
+  defaultFullscreen: 1
+  defaultFrameRateOption: 1

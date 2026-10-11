@@ -72,7 +72,13 @@ public class MonsterAI : MonoBehaviour
     [Tooltip("Preferred separation from friendly monsters. Formation slots and retreat use this to avoid clumping.")]
     [Range(0.6f, 4f)] public float allySpacing = 1.6f;
     [Tooltip("How strongly this role follows its formation position around the Hero.")]
-    [Range(0f, 2f)] public float formationWeight = 0.8f;
+    [Range(0f, 2f)] public float formationWeight = 0.9f;
+    [Tooltip("Assassin disengages after a bad dive below this HP ratio.")]
+    [Range(0.05f, 0.6f)] public float assassinDisengageHp = 0.26f;
+    [Tooltip("Mage prefers retreat points close enough to a Tank or the allied formation.")]
+    [Range(0f, 3f)] public float mageAnchorWeight = 1.15f;
+    [Tooltip("Extra aggression when allies are already pressuring the Hero.")]
+    [Range(0f, 2f)] public float teamPressureWeight = 1f;
 
     [Header("Combat Feel")]
     public float rotationSpeed = 12f;
@@ -134,6 +140,8 @@ public class MonsterAI : MonoBehaviour
     {
         HeroBotAI currentHero = HeroDoomGameManager.Instance != null ? HeroDoomGameManager.Instance.CurrentHero : FindFirstObjectByType<HeroBotAI>();
         heroTarget = currentHero;
+        if (heroTarget != null)
+            lastHeroPosition = heroTarget.transform.position;
         TryPlaceOnNavMesh();
         Trigger("SpawnGround");
     }
@@ -157,32 +165,10 @@ public class MonsterAI : MonoBehaviour
         ApplyAgentSettings();
     }
 
+    [System.Obsolete("Monster stats are authored on each prefab. Configure prefab values in Inspector.")]
     public void ConfigureBySlot(int slot)
     {
         role = (MonsterRole)Mathf.Clamp(slot, 0, 3);
-        switch (role)
-        {
-            case MonsterRole.Mage:
-                maxHP = 90f; moveSpeed = 3.8f; attackDamage = 12f; attackRange = 8f;
-                attackCooldown = 1.35f; preferredRange = 6f; retreatRange = 3.2f;
-                specialCooldown = 7f; specialDamage = 30f; armor = 0.05f; knockbackForce = 0.5f;
-                break;
-            case MonsterRole.Tank:
-                maxHP = 320f; moveSpeed = 2.6f; attackDamage = 18f; attackRange = 1.7f;
-                attackCooldown = 1.35f; armor = 0.32f; knockbackForce = 1.2f;
-                break;
-            case MonsterRole.Assassin:
-                maxHP = 75f; moveSpeed = 7f; attackDamage = 25f; attackRange = 1.45f;
-                attackCooldown = 0.65f; armor = 0f; knockbackForce = 0.85f;
-                break;
-            default:
-                maxHP = 130f; moveSpeed = 4.2f; attackDamage = 14f; attackRange = 1.55f;
-                attackCooldown = 1f; armor = 0.08f; knockbackForce = 0.65f;
-                break;
-        }
-
-        currentHP = maxHP;
-        EnsureRuntimeComponents();
         ApplyAgentSettings();
     }
 
@@ -343,13 +329,28 @@ public class MonsterAI : MonoBehaviour
 
         float score = 58f + (1f - Mathf.Clamp01(distance / Mathf.Max(0.1f, attackRange))) * 16f;
         float heroHp = heroTarget.CurrentHP / Mathf.Max(1f, heroTarget.MaxHP);
-
         float teamPressure = BattlefieldTactics.FocusPressure(heroTarget);
-        if (role == MonsterRole.Assassin) score += (1f - heroHp) * 20f + teamPressure * 12f;
-        if (role == MonsterRole.Tank) score += 7f;
-        if (role == MonsterRole.Mage) score -= 7f;
-        score -= BattlefieldTactics.SpacingPenalty(this, transform.position, allySpacing);
 
+        switch (role)
+        {
+            case MonsterRole.Assassin:
+                score += (1f - heroHp) * 26f + teamPressure * 18f * teamPressureWeight;
+                if (teamPressure < .25f && heroHp > .55f) score -= 16f;
+                if (HPPercent < assassinDisengageHp) score -= 38f;
+                break;
+            case MonsterRole.Tank:
+                score += 12f + (1f - teamPressure) * 7f;
+                break;
+            case MonsterRole.Mage:
+                score -= distance < retreatRange ? 22f : 6f;
+                score += teamPressure * 8f;
+                break;
+            default:
+                score += teamPressure * 5f;
+                break;
+        }
+
+        score -= BattlefieldTactics.SpacingPenalty(this, transform.position, allySpacing);
         return score;
     }
 
@@ -359,31 +360,61 @@ public class MonsterAI : MonoBehaviour
 
         float desiredRange = role == MonsterRole.Mage
             ? Mathf.Min(preferredRange, attackRange)
-            : attackRange;
+            : Mathf.Max(.8f, attackRange);
 
         if (distance <= desiredRange) return 0f;
 
         float normalizedDistance = Mathf.Clamp01(distance / 18f);
+        float teamPressure = BattlefieldTactics.FocusPressure(heroTarget);
         float score = 34f + normalizedDistance * 18f;
 
-        if (role == MonsterRole.Assassin) score += 12f;
-        if (role == MonsterRole.Tank) score += 4f;
-        if (role == MonsterRole.Mage) score += 5f;
-        Vector3 formation = BattlefieldTactics.FormationPoint(this, PredictedHeroPosition(.22f), desiredRange);
-        score += Mathf.Clamp01(FlatDistance(transform.position, formation) / Mathf.Max(1f, desiredRange)) * 12f * formationWeight;
-        score -= BattlefieldTactics.SpacingPenalty(this, transform.position, allySpacing);
+        switch (role)
+        {
+            case MonsterRole.Assassin:
+                score += 9f + teamPressure * 18f * teamPressureWeight;
+                if (HPPercent < assassinDisengageHp) score -= 30f;
+                break;
+            case MonsterRole.Tank:
+                score += 14f + (1f - teamPressure) * 8f;
+                break;
+            case MonsterRole.Mage:
+                score += 6f + teamPressure * 5f;
+                break;
+            default:
+                score += 5f;
+                break;
+        }
 
-        return score;
+        Vector3 formation = BattlefieldTactics.FormationPoint(this, PredictedHeroPosition(.25f), desiredRange);
+        score += Mathf.Clamp01(FlatDistance(transform.position, formation) / Mathf.Max(1f, desiredRange)) *
+                 14f * formationWeight;
+        score -= BattlefieldTactics.SpacingPenalty(this, transform.position, allySpacing);
+        return Mathf.Max(0f, score);
     }
 
     private float ScoreRetreat(float distance)
     {
-        if (role != MonsterRole.Mage || Time.time < nextRetreatAt) return 0f;
-        if (!HeroIsRelevantToGuardZone(distance) || distance >= retreatRange) return 0f;
+        if (Time.time < nextRetreatAt || !HeroIsRelevantToGuardZone(distance)) return 0f;
 
-        float closeness = 1f - Mathf.Clamp01(distance / Mathf.Max(0.1f, retreatRange));
         float lowHealth = 1f - HPPercent;
-        return 68f + closeness * 24f + lowHealth * 12f;
+        float teamPressure = BattlefieldTactics.FocusPressure(heroTarget);
+
+        if (role == MonsterRole.Mage)
+        {
+            if (distance >= retreatRange && HPPercent > .42f) return 0f;
+            float closeness = 1f - Mathf.Clamp01(distance / Mathf.Max(0.1f, retreatRange));
+            return 66f + closeness * 28f + lowHealth * 20f - teamPressure * 5f;
+        }
+
+        if (role == MonsterRole.Assassin)
+        {
+            bool badDive = HPPercent <= assassinDisengageHp;
+            bool waitingForStrike = attackTimer > attackCooldown * .45f && distance < attackRange + 1.2f;
+            if (!badDive && !waitingForStrike) return 0f;
+            return 62f + lowHealth * 32f + (1f - teamPressure) * 12f;
+        }
+
+        return 0f;
     }
 
     private float ScoreMageSpecial(float distance)
@@ -491,7 +522,7 @@ public class MonsterAI : MonoBehaviour
 
     private void ExecuteRetreatAction(float distance)
     {
-        if (role != MonsterRole.Mage)
+        if (role != MonsterRole.Mage && role != MonsterRole.Assassin)
         {
             StopMoving();
             return;
@@ -499,11 +530,13 @@ public class MonsterAI : MonoBehaviour
 
         if (!retreating)
         {
-            nextRetreatAt = Time.time + retreatDuration + retreatCooldown;
+            float roleCooldown = role == MonsterRole.Assassin ? retreatCooldown * .7f : retreatCooldown;
+            nextRetreatAt = Time.time + retreatDuration + roleCooldown;
+
             if (TryChooseRetreatPoint(out retreatDestination))
             {
                 retreating = true;
-                retreatEndsAt = Time.time + retreatDuration;
+                retreatEndsAt = Time.time + (role == MonsterRole.Assassin ? retreatDuration * .75f : retreatDuration);
             }
             else
             {
@@ -631,29 +664,51 @@ public class MonsterAI : MonoBehaviour
 
     private bool TryChooseRetreatPoint(out Vector3 point)
     {
-        Vector3 away = transform.position - heroTarget.transform.position;
-        away.y = 0;
+        Vector3 away = transform.position - PredictedHeroPosition(.2f);
+        away.y = 0f;
         if (away.sqrMagnitude < 0.01f) away = -transform.forward;
         away.Normalize();
+
         point = transform.position;
         float bestScore = float.MinValue;
-        for (int i = 0; i < 5; i++)
+        MonsterAI tankAnchor = role == MonsterRole.Mage
+            ? BattlefieldTactics.ClosestAllyOfRole(this, MonsterRole.Tank)
+            : null;
+
+        for (int i = 0; i < 7; i++)
         {
-            float angle = i == 0 ? 0 : (i % 2 == 0 ? 1 : -1) * ((i + 1) / 2) * 45;
+            float angle = (i - 3) * 32f;
             Vector3 candidate = transform.position + Quaternion.Euler(0, angle, 0) * away * retreatDistance;
             if (GuardPillar != null) candidate = ClampToGuardZone(candidate);
-            if (!NavMesh.SamplePosition(candidate, out NavMeshHit hit, 0.8f, agent.areaMask)) continue;
-            if (GuardPillar != null && !GuardPillar.IsInside(hit.position, 0)) continue;
+
+            if (!NavMesh.SamplePosition(candidate, out NavMeshHit hit, 1.1f, agent.areaMask)) continue;
+            if (GuardPillar != null && !GuardPillar.IsInside(hit.position, 0f)) continue;
             if (FlatDistance(transform.position, hit.position) < 0.6f) continue;
-            if (retreatPath == null) retreatPath = new NavMeshPath();
-            if (!agent.CalculatePath(hit.position, retreatPath) || retreatPath.status != NavMeshPathStatus.PathComplete) continue;
-            float score = FlatDistance(hit.position, heroTarget.transform.position);
-            score -= BattlefieldTactics.SpacingPenalty(this, hit.position, allySpacing);
-            foreach (MonsterAI ally in ActiveMonsters)
-                if (ally != null && ally != this && ally.IsAlive)
-                    score -= Mathf.Max(0, 1.5f - FlatDistance(hit.position, ally.transform.position)) * 2;
-            if (score > bestScore) { bestScore = score; point = hit.position; }
+
+            retreatPath ??= new NavMeshPath();
+            if (!agent.CalculatePath(hit.position, retreatPath) ||
+                retreatPath.status != NavMeshPathStatus.PathComplete) continue;
+
+            float heroDistance = FlatDistance(hit.position, PredictedHeroPosition(.25f));
+            float score = heroDistance * 3f;
+            score -= BattlefieldTactics.SpacingPenalty(this, hit.position, allySpacing) * 1.4f;
+
+            if (role == MonsterRole.Mage && tankAnchor != null)
+            {
+                float anchorDistance = FlatDistance(hit.position, tankAnchor.transform.position);
+                score += Mathf.Clamp01(1f - anchorDistance / 8f) * 12f * mageAnchorWeight;
+            }
+
+            if (role == MonsterRole.Assassin)
+                score += Mathf.Abs(Vector3.Dot((hit.position - transform.position).normalized, transform.right)) * 3f;
+
+            if (score > bestScore)
+            {
+                bestScore = score;
+                point = hit.position;
+            }
         }
+
         return bestScore > float.MinValue;
     }
 
@@ -670,16 +725,39 @@ public class MonsterAI : MonoBehaviour
     private void AttackHero(bool heavy)
     {
         if (heroTarget == null || !heroTarget.IsAlive) return;
+
         attackTimer = Mathf.Max(0.1f, attackCooldown);
         Trigger("Attack");
 
         CapturePillarManager pillars = CapturePillarManager.Instance;
         float damage = attackDamage * (pillars != null ? pillars.MonsterDamageMultiplier : 1f);
-        if (role == MonsterRole.Assassin && heroTarget.CurrentHP / Mathf.Max(1f, heroTarget.MaxHP) < 0.35f)
-            damage *= 1.2f;
+        float heroHp = heroTarget.CurrentHP / Mathf.Max(1f, heroTarget.MaxHP);
+
+        if (role == MonsterRole.Assassin)
+        {
+            float teamPressure = BattlefieldTactics.FocusPressure(heroTarget);
+            damage *= 1f + (1f - heroHp) * .18f + teamPressure * .08f;
+        }
 
         Vector3 push = (heroTarget.transform.position - transform.position).normalized;
-        if (role == MonsterRole.Mage)`r`n        {`r`n            GameAudioController.Instance?.PlayMagic();`r`n            MagicProjectile.Spawn(transform.position + Vector3.up * 1.25f, heroTarget, this, damage, knockbackForce, mageProjectilePrefab);`r`n        }`r`n        else`r`n        {`r`n            GameAudioController.Instance?.PlayMeleeHit();`r`n            heroTarget.TakeDamage(damage, this, push * knockbackForce, heavy);`r`n        }
+
+        if (role == MonsterRole.Mage)
+        {
+            GameAudioController.Instance?.PlayMagic();
+            MagicProjectile.Spawn(
+                transform.position + Vector3.up * 1.25f,
+                heroTarget,
+                this,
+                damage,
+                knockbackForce,
+                mageProjectilePrefab);
+        }
+        else
+        {
+            GameAudioController.Instance?.PlayMeleeHit();
+            heroTarget.TakeDamage(damage, this, push * knockbackForce, heavy);
+        }
+    }
 
     private void CastMageSpecial()
     {
@@ -696,7 +774,8 @@ public class MonsterAI : MonoBehaviour
 
         if (heroTarget != null && heroTarget.IsAlive && FlatDistance(transform.position, heroTarget.transform.position) <= attackRange + 1.5f)
         {
-            GameAudioController.Instance?.PlayMagic();`r`n            MagicProjectile.SpawnLightning(lightningPrefab, transform.position + Vector3.up * 1.35f, heroTarget.transform.position + Vector3.up);
+            GameAudioController.Instance?.PlayMagic();
+            MagicProjectile.SpawnLightning(lightningPrefab, transform.position + Vector3.up * 1.35f, heroTarget.transform.position + Vector3.up);
             Vector3 push = (heroTarget.transform.position - transform.position).normalized;
             heroTarget.TakeDamage(specialDamage, this, push * (knockbackForce + 0.8f), true);
         }
@@ -764,7 +843,9 @@ public class MonsterAI : MonoBehaviour
         if (agent != null) agent.enabled = false;
         foreach (Collider c in GetComponentsInChildren<Collider>()) c.enabled = false;
 
-        Trigger("Die");`r`n        GameAudioController.Instance?.PlayMonsterDeath();`r`n        if (dropExperience)
+        Trigger("Die");
+        GameAudioController.Instance?.PlayMonsterDeath();
+        if (dropExperience)
             ExperienceOrb.Spawn(experienceOrbPrefab, transform.position, GetXPValue());
         StartCoroutine(DeathRoutine());
     }
@@ -903,12 +984,31 @@ public static class BattlefieldTactics
     {
         int count = 0;
         float radiusSqr = radius * radius;
+
         foreach (MonsterAI ally in MonsterAI.ActiveMonsters)
         {
             if (ally == null || !ally.IsAlive || ally == self) continue;
-            Vector3 delta = ally.transform.position - point; delta.y = 0f;
+            Vector3 delta = ally.transform.position - point;
+            delta.y = 0f;
             if (delta.sqrMagnitude <= radiusSqr) count++;
         }
+
+        return count;
+    }
+
+    public static int CountRoleNear(MonsterRole role, Vector3 point, float radius)
+    {
+        int count = 0;
+        float radiusSqr = radius * radius;
+
+        foreach (MonsterAI ally in MonsterAI.ActiveMonsters)
+        {
+            if (ally == null || !ally.IsAlive || ally.role != role) continue;
+            Vector3 delta = ally.transform.position - point;
+            delta.y = 0f;
+            if (delta.sqrMagnitude <= radiusSqr) count++;
+        }
+
         return count;
     }
 
@@ -919,32 +1019,84 @@ public static class BattlefieldTactics
         return Mathf.Clamp01(nearby / 4f);
     }
 
+    public static MonsterAI ClosestAllyOfRole(MonsterAI self, MonsterRole role)
+    {
+        MonsterAI best = null;
+        float bestSqr = float.MaxValue;
+
+        foreach (MonsterAI ally in MonsterAI.ActiveMonsters)
+        {
+            if (ally == null || !ally.IsAlive || ally == self || ally.role != role) continue;
+            float sqr = (ally.transform.position - self.transform.position).sqrMagnitude;
+            if (sqr < bestSqr)
+            {
+                bestSqr = sqr;
+                best = ally;
+            }
+        }
+
+        return best;
+    }
+
+    public static Vector3 MonsterCentroid(Vector3 point, float radius)
+    {
+        Vector3 sum = Vector3.zero;
+        int count = 0;
+        float radiusSqr = radius * radius;
+
+        foreach (MonsterAI monster in MonsterAI.ActiveMonsters)
+        {
+            if (monster == null || !monster.IsAlive) continue;
+            Vector3 delta = monster.transform.position - point;
+            delta.y = 0f;
+            if (delta.sqrMagnitude > radiusSqr) continue;
+            sum += monster.transform.position;
+            count++;
+        }
+
+        return count > 0 ? sum / count : point;
+    }
+
+    public static float NearestMonsterDistance(Vector3 point, float fallback)
+    {
+        float best = fallback;
+        foreach (MonsterAI monster in MonsterAI.ActiveMonsters)
+        {
+            if (monster == null || !monster.IsAlive) continue;
+            Vector3 delta = monster.transform.position - point;
+            delta.y = 0f;
+            best = Mathf.Min(best, delta.magnitude);
+        }
+        return best;
+    }
+
     public static Vector3 FormationPoint(MonsterAI self, HeroBotAI hero, float range)
     {
-        return FormationPoint(self, hero != null ? hero.transform.position : self.transform.position, range);
+        return FormationPoint(
+            self,
+            hero != null ? hero.transform.position : self.transform.position,
+            range);
     }
 
     public static Vector3 FormationPoint(MonsterAI self, Vector3 center, float range)
     {
-        // Stable per-unit slots prevent all monsters from stacking in one point.
         float baseAngle = self.role switch
         {
             MonsterRole.Tank => 0f,
-            MonsterRole.Mage => 110f,
-            MonsterRole.Assassin => -110f,
+            MonsterRole.Mage => 130f,
+            MonsterRole.Assassin => -120f,
             _ => 180f
         };
-        float variation = Mathf.Repeat(self.GetInstanceID() * 47.31f, 38f) - 19f;
-        Vector3 direction = Quaternion.Euler(0f, baseAngle + variation, 0f) * self.transform.forward;
-        direction.y = 0f;
-        if (direction.sqrMagnitude < .01f) direction = Vector3.forward;
-        return center + direction.normalized * range;
+
+        // Stable world-space slot: turning the unit no longer rotates the whole formation.
+        float variation = Mathf.Repeat(Mathf.Abs(self.GetInstanceID()) * 47.31f, 70f) - 35f;
+        Vector3 direction = Quaternion.Euler(0f, baseAngle + variation, 0f) * Vector3.forward;
+        return center + direction.normalized * Mathf.Max(.35f, range);
     }
 
     public static float SpacingPenalty(MonsterAI self, Vector3 point, float desiredSpacing)
     {
-        int crowding = CountAlliesNear(self, point, desiredSpacing);
-        return crowding * 5f;
+        return CountAlliesNear(self, point, desiredSpacing) * 5f;
     }
 }
 

@@ -10,22 +10,22 @@ public class PlayerSpawner : MonoBehaviour
     [Header("Monster 1 - Basic Melee")]
     [Tooltip("Kéo prefab quái #1 vào đây.")]
     public GameObject monster1Prefab;
-    public double monster1Cost = 10d;
+    public double monster1Cost = 12d;
 
     [Header("Monster 2 - Mage")]
     [Tooltip("Kéo prefab quái #2 vào đây.")]
     public GameObject monster2Prefab;
-    public double monster2Cost = 25d;
+    public double monster2Cost = 32d;
 
     [Header("Monster 3 - Tank")]
     [Tooltip("Kéo ĐÚNG prefab Tank vào đây. Không tự động đoán prefab.")]
     public GameObject monster3Prefab;
-    public double monster3Cost = 40d;
+    public double monster3Cost = 68d;
 
     [Header("Monster 4 - Assassin")]
     [Tooltip("Kéo ĐÚNG prefab Assassin vào đây. Không tự động đoán prefab.")]
     public GameObject monster4Prefab;
-    public double monster4Cost = 35d;
+    public double monster4Cost = 85d;
 
     [Header("Upgrades and automatic summoning")]
     public SummonerUpgrades upgrades;
@@ -323,15 +323,24 @@ public class PlayerSpawner : MonoBehaviour
     {
         if (Time.unscaledTime < nextInsufficientGoldSoundTime || insufficientGoldSoundVolume <= 0f) return;
         nextInsufficientGoldSoundTime = Time.unscaledTime + insufficientGoldSoundCooldown;
+
+        if (insufficientGoldSound == null)
+        {
+            GameAudioController.Instance?.PlayNoMoney();
+            return;
+        }
+
         if (feedbackAudioSource == null)
         {
             feedbackAudioSource = GetComponent<AudioSource>();
-            if (feedbackAudioSource == null) feedbackAudioSource = gameObject.AddComponent<AudioSource>();
+            if (feedbackAudioSource == null)
+                feedbackAudioSource = gameObject.AddComponent<AudioSource>();
+
             feedbackAudioSource.playOnAwake = false;
             feedbackAudioSource.spatialBlend = 0f;
         }
 
-        AudioClip clip = insufficientGoldSound != null ? insufficientGoldSound : Resources.Load<AudioClip>("SFX/NoMoney");`r`n        if (clip != null) feedbackAudioSource.PlayOneShot(clip, insufficientGoldSoundVolume);`r`n        else GameAudioController.Instance?.PlayNoMoney();
+        feedbackAudioSource.PlayOneShot(insufficientGoldSound, insufficientGoldSoundVolume);
     }
 
     public bool TryAutoSpawn(int slot, bool chargeGold)
@@ -366,7 +375,9 @@ public class PlayerSpawner : MonoBehaviour
         MonsterAI ai = go.GetComponent<MonsterAI>();
         if (controlledMonster != null && !controlledMonster.IsAlive) controlledMonster = null;
         upgrades?.Apply(ai, slot);
-        CapturePillarManager.Instance?.TryAssignGuard(ai, navHit.position);`r`n        GameAudioController.Instance?.PlaySummon();`r`n        return true;
+        CapturePillarManager.Instance?.TryAssignGuard(ai, navHit.position);
+        GameAudioController.Instance?.PlaySummon();
+        return true;
     }
 
     private bool IsValidSpawn(Vector3 point)

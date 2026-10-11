@@ -14,8 +14,8 @@ public sealed class LuckyWheelController : MonoBehaviour
     public TMP_Text balanceText;
     public TMP_Text costText;
     public TMP_Text resultText;
-    [Min(1)] public double baseSpinCost = 100d;
-    [Min(1f)] public float costGrowth = 1.2f;
+    [Min(1)] public double baseSpinCost = 160d;
+    [Min(1f)] public float costGrowth = 1.16f;
     [Min(0.1f)] public float spinDuration = 3f;
 
     private enum RewardKind { SmallGold, HeroHeal, BasicSummons, StandardGold, HeroExperience, GoldFrenzy, DoubleGold, JackpotGold }
@@ -71,6 +71,7 @@ public sealed class LuckyWheelController : MonoBehaviour
     public void Spin()
     {
         if (spinning || manager == null || wheel == null || !manager.SpendGold(CurrentCost)) return;
+        GameAudioController.Instance?.PlayClick();
         StartCoroutine(SpinRoutine());
     }
 
@@ -117,6 +118,7 @@ public sealed class LuckyWheelController : MonoBehaviour
                 break;
         }
         completedSpins++;
+        GameAudioController.Instance?.PlayReward();
         if (resultText != null)
             resultText.text = reward > 0d
                 ? rewardKind == RewardKind.JackpotGold ? $"JACKPOT!  +{HeroDoomGameManager.FormatNumber(reward)} G" : $"YOU WON  +{HeroDoomGameManager.FormatNumber(reward)} G"

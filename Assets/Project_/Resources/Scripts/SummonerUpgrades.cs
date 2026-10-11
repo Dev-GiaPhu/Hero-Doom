@@ -12,8 +12,18 @@ public class SummonerUpgrades : MonoBehaviour
     [Header("Unlock and Rebirth")]
     public Button rebirthButton;
     public TMP_Text rebirthLabel;
-    [Min(0)] public double rebirthStartingGold = 50d;
-    [Min(0f)] public float goldMultiplierPerRebirth = 0.12f;
+    [Min(0)] public double rebirthStartingGold = 60d;
+    [Min(0f)] public float goldMultiplierPerRebirth = 0.15f;
+
+    [Header("Rebirth Run Requirements")]
+    [Min(1)] public int baseRebirthPowerRequirement = 18;
+    [Min(0)] public int powerRequirementPerRebirth = 6;
+    [Min(0)] public int baseRebirthAutoRequirement = 4;
+    [Min(0)] public int autoRequirementPerRebirth = 2;
+    [Min(0)] public int baseHeroKillsRequirement = 2;
+    [Min(0)] public int heroKillsPerRebirth = 1;
+    [Min(0)] public double baseRunGoldRequirement = 2500d;
+    [Min(1f)] public float runGoldRequirementGrowth = 2.05f;
     [Tooltip("Asset định nghĩa node, nhánh và hiệu lực của Rebirth Tree. Được author sẵn trong Resources/Upgrades.")]
     public RebirthTreeDefinition rebirthTree;
     [SerializeField] private bool[] unlockedMonsters = { true, false, false, false };
@@ -36,12 +46,16 @@ public class SummonerUpgrades : MonoBehaviour
     public int RebirthArmyCapacityBonus => Mathf.RoundToInt(RebirthBonus(RebirthTreeBonus.ArmyCapacity));
     public float RebirthSpawnProtectionBonus => RebirthBonus(RebirthTreeBonus.SpawnProtection);
     public int EffectiveArmyCapacity => maxAliveMonsters + RebirthArmyCapacityBonus;
-    public int RebirthPowerRequirement => 8 + rebirthCount * 2;
+    public int RebirthPowerRequirement => baseRebirthPowerRequirement + rebirthCount * powerRequirementPerRebirth;
+    public int RebirthAutoRequirement => baseRebirthAutoRequirement + rebirthCount * autoRequirementPerRebirth;
+    public int RebirthHeroKillsRequirement => baseHeroKillsRequirement + rebirthCount * heroKillsPerRebirth;
+    public double RebirthRunGoldRequirement => baseRunGoldRequirement * System.Math.Pow(runGoldRequirementGrowth, rebirthCount);
     public int TotalPowerLevels { get { int total = 0; for (int i = 0; i < powerLevels.Length; i++) total += powerLevels[i]; return total; } }
+    public int TotalAutoLevels { get { int total = 0; for (int i = 0; i < autoLevels.Length; i++) total += autoLevels[i]; return total; } }
     public int UnlockedMonsterCount { get { int total = 0; for (int i = 0; i < unlockedMonsters.Length; i++) if (unlockedMonsters[i]) total++; return total; } }
     [Tooltip("Order: Basic, Mage, Tank, Assassin. Assets contain all balancing values.")]
     public MonsterUpgradeDefinition[] definitions = new MonsterUpgradeDefinition[4];
-    [Min(1)] public int maxAliveMonsters = 36;
+    [Min(1)] public int maxAliveMonsters = 30;
     [Min(0.1f)] public float minimumTimeBetweenAutoSpawns = 0.4f;
     [Min(0.1f)] public float failedSpawnRetryDelay = 1f;
     [SerializeField] private int[] powerLevels = new int[4];
@@ -50,8 +64,8 @@ public class SummonerUpgrades : MonoBehaviour
     private float nextAutoSpawn;
     private int nextAutoSlot;
     public event Action Changed;
-    public int PowerLevel(int slot) => powerLevels[slot];
-    public int AutoLevel(int slot) => autoLevels[slot];
+    public int PowerLevel(int slot) => slot >= 0 && slot < powerLevels.Length ? powerLevels[slot] : 0;
+    public int AutoLevel(int slot) => slot >= 0 && slot < autoLevels.Length ? autoLevels[slot] : 0;
     public float Remaining(int slot) => slot >= 0 && slot < remaining.Length ? Mathf.Max(0, remaining[slot]) : 0f;
 
     public int AliveCount(int slot)
@@ -74,6 +88,20 @@ public class SummonerUpgrades : MonoBehaviour
             unlockedMonsters = new bool[4];
             if (old != null) Array.Copy(old, unlockedMonsters, Mathf.Min(old.Length, unlockedMonsters.Length));
         }
+        if (powerLevels == null || powerLevels.Length != 4)
+        {
+            int[] old = powerLevels;
+            powerLevels = new int[4];
+            if (old != null) Array.Copy(old, powerLevels, Mathf.Min(old.Length, powerLevels.Length));
+        }
+
+        if (autoLevels == null || autoLevels.Length != 4)
+        {
+            int[] old = autoLevels;
+            autoLevels = new int[4];
+            if (old != null) Array.Copy(old, autoLevels, Mathf.Min(old.Length, autoLevels.Length));
+        }
+
         unlockedMonsters[0] = true;
         EnsureRebirthTreeState();
     }
@@ -93,10 +121,11 @@ public class SummonerUpgrades : MonoBehaviour
         if (rebirthButton != null) rebirthButton.interactable = CanRebirth;
         if (rebirthLabel != null)
         {
-            int level = gameManager != null && gameManager.CurrentHero != null ? gameManager.CurrentHero.Level : 1;
+            int heroKills = gameManager != null ? gameManager.HeroDeaths : 0;
+            double runGold = gameManager != null ? gameManager.RunGoldEarned : 0d;
             rebirthLabel.text = CanRebirth
-                ? $"REBIRTH  #{rebirthCount + 1}  •  +{goldMultiplierPerRebirth:P0} GOLD"
-                : $"REBIRTH  •  UNLOCK {UnlockedMonsterCount}/4  •  POWER {TotalPowerLevels}/{RebirthPowerRequirement}";
+                ? $"REBIRTH #{rebirthCount + 1}  •  +{goldMultiplierPerRebirth:P0} GOLD  •  +1 TREE POINT"
+                : $"REBIRTH  •  UNLOCK {UnlockedMonsterCount}/4  •  POWER {TotalPowerLevels}/{RebirthPowerRequirement}  •  AUTO {TotalAutoLevels}/{RebirthAutoRequirement}  •  KILLS {heroKills}/{RebirthHeroKillsRequirement}  •  EARN {HeroDoomGameManager.FormatNumber(runGold)}/{HeroDoomGameManager.FormatNumber(RebirthRunGoldRequirement)}";
         }
         for (int i = 0; i < 4; i++)
             if (autoLevels[i] > 0) remaining[i] -= Time.deltaTime;
@@ -132,17 +161,27 @@ public class SummonerUpgrades : MonoBehaviour
     public bool UnlockMonster(int slot)
     {
         if (!CanUnlock(slot) || !gameManager.SpendGold(UnlockCost(slot))) return false;
-        unlockedMonsters[slot] = true;`r`n        GameAudioController.Instance?.PlayReward();`r`n        Changed?.Invoke();`r`n        return true;
+        unlockedMonsters[slot] = true;
+        GameAudioController.Instance?.PlayReward();
+        Changed?.Invoke();
+        return true;
     }
 
-    public bool CanRebirth => gameManager != null && UnlockedMonsterCount == 4 && TotalPowerLevels >= RebirthPowerRequirement;
+    public bool CanRebirth =>
+        gameManager != null &&
+        UnlockedMonsterCount == 4 &&
+        TotalPowerLevels >= RebirthPowerRequirement &&
+        TotalAutoLevels >= RebirthAutoRequirement &&
+        gameManager.HeroDeaths >= RebirthHeroKillsRequirement &&
+        gameManager.RunGoldEarned >= RebirthRunGoldRequirement;
 
     public void PerformRebirth()
     {
         if (!CanRebirth) return;
         rebirthCount++;
         rebirthPoints++;
-        gameManager.ApplyPlayerRebirth(rebirthStartingGold * RebirthStartingGoldMultiplier, RebirthGoldMultiplier);`r`n        GameAudioController.Instance?.PlayReward();
+        gameManager.ApplyPlayerRebirth(rebirthStartingGold * RebirthStartingGoldMultiplier, RebirthGoldMultiplier);
+        GameAudioController.Instance?.PlayReward();
         Changed?.Invoke();
     }
 
@@ -187,7 +226,9 @@ public class SummonerUpgrades : MonoBehaviour
         if (!CanPurchaseRebirthNode(index)) return false;
         rebirthPoints -= rebirthTree.GetNode(index).cost;
         purchasedRebirthNodes[index] = true;
-        ReapplyRebirthTreeBonuses();`r`n        GameAudioController.Instance?.PlayReward();`r`n        Changed?.Invoke();
+        ReapplyRebirthTreeBonuses();
+        GameAudioController.Instance?.PlayReward();
+        Changed?.Invoke();
         return true;
     }
 
@@ -227,6 +268,7 @@ public class SummonerUpgrades : MonoBehaviour
     public bool GrantFreePowerLevel(int slot)
     {
         if (slot < 0 || slot >= definitions.Length || definitions[slot] == null || !IsMonsterUnlocked(slot)) return false;
+        if (powerLevels[slot] >= definitions[slot].maxPowerLevel) return false;
         powerLevels[slot] = Mathf.Min(definitions[slot].maxPowerLevel, powerLevels[slot] + 1);
         foreach (MonsterAI monster in MonsterAI.ActiveMonsters)
             if (monster != null && monster.IsAlive && monster.role == definitions[slot].role) Apply(monster, slot);
@@ -242,16 +284,22 @@ public class SummonerUpgrades : MonoBehaviour
     }
 
     public bool CanBuyPower(int slot) => slot >= 0 && slot < definitions.Length && definitions[slot] != null && gameManager != null &&
-        IsMonsterUnlocked(slot) && powerLevels[slot] < int.MaxValue && gameManager.CanAfford(definitions[slot].PowerCost(powerLevels[slot]));
+        IsMonsterUnlocked(slot) && powerLevels[slot] < definitions[slot].maxPowerLevel &&
+        gameManager.CanAfford(definitions[slot].PowerCost(powerLevels[slot]));
 
-    public bool CanBuyAuto(int slot) => definitions[slot] != null && gameManager != null && IsAutoUnlocked(slot) &&
-        IsMonsterUnlocked(slot) && autoLevels[slot] < definitions[slot].maxAutoLevel && gameManager.CanAfford(definitions[slot].AutoCost(autoLevels[slot]));
+    public bool CanBuyAuto(int slot) =>
+        slot >= 0 && slot < definitions.Length && slot < autoLevels.Length &&
+        definitions[slot] != null && gameManager != null && IsAutoUnlocked(slot) &&
+        IsMonsterUnlocked(slot) && autoLevels[slot] < definitions[slot].maxAutoLevel &&
+        gameManager.CanAfford(definitions[slot].AutoCost(autoLevels[slot]));
 
     public bool BuyPower(int slot)
     {
         if (!IsMonsterUnlocked(slot)) return UnlockMonster(slot);
         if (!CanBuyPower(slot) || !gameManager.SpendGold(definitions[slot].PowerCost(powerLevels[slot]))) return false;
-        powerLevels[slot]++;`r`n        GameAudioController.Instance?.PlayReward();`r`n        foreach (MonsterAI monster in MonsterAI.ActiveMonsters)
+        powerLevels[slot]++;
+        GameAudioController.Instance?.PlayClick();
+        foreach (MonsterAI monster in MonsterAI.ActiveMonsters)
             if (monster != null && monster.IsAlive && monster.role == definitions[slot].role) Apply(monster, slot);
         Changed?.Invoke();
         return true;
@@ -260,7 +308,9 @@ public class SummonerUpgrades : MonoBehaviour
     public bool BuyAuto(int slot)
     {
         if (!CanBuyAuto(slot) || !gameManager.SpendGold(definitions[slot].AutoCost(autoLevels[slot]))) return false;
-        autoLevels[slot]++;`r`n        GameAudioController.Instance?.PlayReward();`r`n        float interval = definitions[slot].Interval(autoLevels[slot]);
+        autoLevels[slot]++;
+        GameAudioController.Instance?.PlayClick();
+        float interval = definitions[slot].Interval(autoLevels[slot]);
         interval *= RebirthAutoIntervalMultiplier;
         remaining[slot] = autoLevels[slot] == 1 ? interval : Mathf.Min(remaining[slot], interval);
         Changed?.Invoke();

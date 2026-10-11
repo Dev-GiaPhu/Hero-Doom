@@ -213,12 +213,12 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   role: 3
-  maxHP: 100
+  maxHP: 72
   currentHP: 0
-  moveSpeed: 4.2
-  attackDamage: 14
-  attackRange: 1.5
-  attackCooldown: 1.2
+  moveSpeed: 6.2
+  attackDamage: 22
+  attackRange: 1.45
+  attackCooldown: 0.72
   armor: 0
   mageProjectilePrefab: {fileID: 0}
   preferredRange: 6
@@ -241,7 +241,7 @@ MonoBehaviour:
   actionSwitchThreshold: 6
   currentActionInertia: 8
   rotationSpeed: 8
-  knockbackForce: 5.5
+  knockbackForce: 4.8
   corpseHoldTime: 2.5
   shrinkDuration: 1.25
   currentUtilityAction: 0

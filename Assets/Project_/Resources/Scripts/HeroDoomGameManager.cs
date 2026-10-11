@@ -1,25 +1,25 @@
 using UnityEngine;
 
-[RequireComponent(typeof(GameAudioController))]`r`npublic class HeroDoomGameManager : MonoBehaviour
+public class HeroDoomGameManager : MonoBehaviour
 {
     public static HeroDoomGameManager Instance { get; private set; }
 
     [Header("Hero Lifecycle")]
     public GameObject heroPrefab;
-    public float baseHeroHP = 500f;
-    public float heroHPPerDeath = 75f;
+    public float baseHeroHP = 220f;
+    public float heroHPPerDeath = 45f;
     public float respawnDelay = 5f;
     public float respawnSearchRadius = 10f;
     [Min(0f)] public float respawnMinimumDistance = 4f;
     [Range(4, 64)] public int respawnRandomAttempts = 24;
 
     [Header("Economy")]
-    public double startingGold = 50d;
-    public double passiveGoldPerSecond = 0.35d;
-    public double goldPerDamage = 0.05d;
+    public double startingGold = 60d;
+    public double passiveGoldPerSecond = 0.7d;
+    public double goldPerDamage = 0.1d;
     [Header("Economy pacing")]
-    [Min(1f)] public double economySoftPressureGold = 1400d;
-    [Range(.1f, 1f)] public float incomeAtSoftPressure = .68f;
+    [Min(1f)] public double economySoftPressureGold = 2200d;
+    [Range(.1f, 1f)] public float incomeAtSoftPressure = .75f;
 
     [Header("Scene References")]
     public InfiniteMapGenerator map;
@@ -29,6 +29,7 @@ using UnityEngine;
     public HeroBotAI CurrentHero { get; private set; }
     public int HeroDeaths { get; private set; }
     public double Gold { get; private set; }
+    public double RunGoldEarned { get; private set; }
     public bool IsRespawning => respawnTimer > 0f;
     public float RespawnRemaining => Mathf.Max(0f, respawnTimer);
 
@@ -50,7 +51,6 @@ using UnityEngine;
         }
 
         Instance = this;
-        if (GetComponent<GameAudioController>() == null) gameObject.AddComponent<GameAudioController>();
         Gold = startingGold;
     }
 
@@ -75,7 +75,15 @@ using UnityEngine;
             if (timedGoldRemaining <= 0f) timedGoldMultiplier = 1f;
         }
         double pace = EconomyPacing;
-        Gold += passiveGoldPerSecond * pace * GetGoldMultiplier() * RebirthTreeIncomeMultiplier * rebirthGoldMultiplier * timedGoldMultiplier * Time.deltaTime;
+        double passiveIncome =
+            passiveGoldPerSecond *
+            pace *
+            GetGoldMultiplier() *
+            RebirthTreeIncomeMultiplier *
+            rebirthGoldMultiplier *
+            timedGoldMultiplier *
+            Time.deltaTime;
+        AddGoldInternal(passiveIncome, true);
 
         if (respawnTimer > 0f)
         {
@@ -135,6 +143,7 @@ using UnityEngine;
     {
         // A rebirth starts a clean run; only its permanent gold reward survives.
         Gold = startingGoldAmount;
+        RunGoldEarned = 0d;
         rebirthGoldMultiplier = Mathf.Max(1f, goldMultiplier);
         timedGoldMultiplier = 1f;
         timedGoldRemaining = 0f;
@@ -254,17 +263,30 @@ using UnityEngine;
 
     public void GrantGold(double amount)
     {
-        if (amount > 0d) Gold += amount;
+        AddGoldInternal(amount, true);
     }
 
     public void AddDamageGold(float actualDamage)
     {
         if (actualDamage <= 0f) return;
 
-        Gold +=
+        double reward =
             actualDamage *
             goldPerDamage *
-            (float)EconomyPacing * GetGoldMultiplier() * RebirthTreeIncomeMultiplier * rebirthGoldMultiplier * timedGoldMultiplier;
+            EconomyPacing *
+            GetGoldMultiplier() *
+            RebirthTreeIncomeMultiplier *
+            rebirthGoldMultiplier *
+            timedGoldMultiplier;
+
+        AddGoldInternal(reward, true);
+    }
+
+    private void AddGoldInternal(double amount, bool countsForRun)
+    {
+        if (amount <= 0d) return;
+        Gold += amount;
+        if (countsForRun) RunGoldEarned += amount;
     }
 
     public float GetGoldMultiplier()

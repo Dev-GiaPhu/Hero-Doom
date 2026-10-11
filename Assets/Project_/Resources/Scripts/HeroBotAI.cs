@@ -77,9 +77,21 @@ public class HeroBotAI : MonoBehaviour
     [Range(0f, 3f)] public float objectiveWeight = 0.75f;
 
     [Header("Combat Target Selection")]
-    [Min(0.05f)] public float targetRecheckInterval = 0.35f;
-    [Min(0)] public float currentTargetPreference = 2f;
-    [Min(0f)] public float targetSwitchThreshold = 2.5f;
+    [Min(0.05f)] public float targetRecheckInterval = 0.28f;
+    [Min(0)] public float currentTargetPreference = 2.5f;
+    [Min(0f)] public float targetSwitchThreshold = 3f;
+
+    [Header("Tactical Survival AI")]
+    [Tooltip("Hero bắt đầu ưu tiên tạo khoảng trống khi HP thấp hơn mốc này và đang bị vây.")]
+    [Range(0.1f, 0.9f)] public float tacticalRetreatHp = 0.58f;
+    [Tooltip("Số quái ở gần để Hero xem là đang bị vây.")]
+    [Range(1, 8)] public int surroundedThreatCount = 3;
+    [Tooltip("Khoảng Hero cố tạo ra khi reposition.")]
+    [Range(1f, 8f)] public float tacticalRepositionDistance = 3.4f;
+    [Tooltip("Bán kính dùng để chấm điểm vị trí an toàn.")]
+    [Range(2f, 12f)] public float tacticalDangerRadius = 6f;
+    [Tooltip("Số hướng NavMesh được thử khi tìm chỗ reposition.")]
+    [Range(4, 16)] public int tacticalPositionSamples = 8;
 
     [Header("Level Up - AI chooses one of two")]
     public HeroUpgradeThought upgradeThoughtPrefab;
@@ -251,35 +263,51 @@ public class HeroBotAI : MonoBehaviour
 
     private float ScoreMonsterTarget(MonsterAI monster, float distance)
     {
-        float threat = monster.role switch
+        float roleThreat = monster.role switch
         {
-            MonsterRole.Assassin => 9f,
-            MonsterRole.Mage => 8f,
-            MonsterRole.Tank => 4.5f,
-            _ => 5.5f
+            MonsterRole.Assassin => 13f,
+            MonsterRole.Mage => 11f,
+            MonsterRole.Tank => 5f,
+            _ => 7f
         };
 
-        float proximity = Mathf.Clamp01(1f - distance / Mathf.Max(1f, searchRadius)) * 12f;
-        float finishValue = (1f - monster.HPPercent) * 7f;
-        float objectiveThreat = monster.GuardPillar != null ? 5f : 0f;
-        float isolatedBonus = Mathf.Clamp01(1f - BattlefieldTactics.CountAlliesNear(monster, monster.transform.position, 3.2f) / 3f) * 5f;
-        return threat + proximity + finishValue + objectiveThreat + isolatedBonus;
+        float proximity = Mathf.Clamp01(1f - distance / Mathf.Max(1f, searchRadius)) * 15f;
+        float finishValue = (1f - monster.HPPercent) * 10f;
+        float objectiveThreat = monster.GuardPillar != null ? 4f : 0f;
+        float dps = monster.attackDamage / Mathf.Max(0.2f, monster.attackCooldown);
+        float dpsThreat = Mathf.Clamp(dps / 5f, 0f, 10f);
+        float isolation = 1f - Mathf.Clamp01(BattlefieldTactics.CountAlliesNear(monster, monster.transform.position, 3.2f) / 3f);
+        float isolationBonus = isolation * 4f;
+
+        // Hero xử lý glass-cannon trước, nhưng vẫn ưu tiên mục tiêu ở đủ gần để không chạy xuyên cả bầy.
+        if (monster.role == MonsterRole.Mage || monster.role == MonsterRole.Assassin)
+            finishValue *= 1.25f;
+
+        return roleThreat + proximity + finishValue + objectiveThreat + dpsThreat + isolationBonus;
     }
 
     private void EvaluateUtilityActions()
     {
-        targetExperience = PickBestExperienceTarget(out float xpScore);
+        // EXP chỉ được nhặt trong pickup radius; Hero không đổi đường chạy chỉ để đuổi orb.
+        targetExperience = null;
         targetObjective = CapturePillarManager.Instance != null
             ? CapturePillarManager.Instance.FindClosestCaptured(transform.position)
             : null;
 
+        int nearbyThreats = CountNearbyMonsters(transform.position, tacticalDangerRadius);
+        float hpRatio = currentHP / Mathf.Max(1f, maxHP);
+        float danger = Mathf.Clamp01(nearbyThreats / Mathf.Max(1f, surroundedThreatCount));
+
         float combatScore = ScoreCombatAction() * combatWeight;
-        float experienceScore = xpScore * experienceWeight;
         float objectiveScore = ScoreObjectiveAction(targetObjective) * objectiveWeight;
         float idleScore = 1f;
 
+        // Khi HP thấp hoặc đang bị vây, Hero không bỏ combat để đi pillar.
+        combatScore += danger * 22f + (1f - hpRatio) * danger * 24f;
+        objectiveScore *= Mathf.Lerp(1f, 0.25f, danger);
+        if (hpRatio < 0.35f && nearbyThreats > 0) objectiveScore *= 0.25f;
+
         combatScore += currentAction == HeroUtilityAction.Combat ? currentActionInertia : 0f;
-        experienceScore += currentAction == HeroUtilityAction.CollectExperience ? currentActionInertia : 0f;
         objectiveScore += currentAction == HeroUtilityAction.AttackObjective ? currentActionInertia : 0f;
         idleScore += currentAction == HeroUtilityAction.Idle ? currentActionInertia : 0f;
 
@@ -287,7 +315,6 @@ public class HeroBotAI : MonoBehaviour
         float bestScore = idleScore;
 
         ConsiderUtilityCandidate(HeroUtilityAction.Combat, combatScore, ref bestAction, ref bestScore);
-        ConsiderUtilityCandidate(HeroUtilityAction.CollectExperience, experienceScore, ref bestAction, ref bestScore);
         ConsiderUtilityCandidate(HeroUtilityAction.AttackObjective, objectiveScore, ref bestAction, ref bestScore);
 
         bool currentInvalid = !IsCurrentActionValid();
@@ -302,7 +329,12 @@ public class HeroBotAI : MonoBehaviour
         }
         else
         {
-            currentActionScore = ScoreAction(currentAction, combatScore, experienceScore, objectiveScore, idleScore);
+            currentActionScore = currentAction switch
+            {
+                HeroUtilityAction.Combat => combatScore,
+                HeroUtilityAction.AttackObjective => objectiveScore,
+                _ => idleScore
+            };
         }
     }
 
@@ -416,7 +448,7 @@ public class HeroBotAI : MonoBehaviour
         return currentAction switch
         {
             HeroUtilityAction.Combat => targetMonster != null && targetMonster.IsAlive,
-            HeroUtilityAction.CollectExperience => targetExperience != null && !targetExperience.IsCollected,
+            HeroUtilityAction.CollectExperience => false,
             HeroUtilityAction.AttackObjective => targetObjective != null,
             _ => true
         };
@@ -430,7 +462,10 @@ public class HeroBotAI : MonoBehaviour
                 ExecuteCombatAction();
                 break;
             case HeroUtilityAction.CollectExperience:
-                ExecuteExperienceAction();
+                targetExperience = null;
+                currentAction = HeroUtilityAction.Idle;
+                nextDecisionAt = 0f;
+                StopMoving();
                 break;
             case HeroUtilityAction.AttackObjective:
                 ExecuteObjectiveAction();
@@ -449,50 +484,82 @@ public class HeroBotAI : MonoBehaviour
             return;
         }
 
-        float distance = FlatDistance(transform.position, targetMonster.transform.position);
-        int nearbyThreats = CountNearbyMonsters(transform.position, 3.8f);
+        int nearbyThreats = CountNearbyMonsters(transform.position, tacticalDangerRadius);
         float hpRatio = currentHP / Mathf.Max(1f, maxHP);
-        // Reposition instead of trading in place when surrounded: a small hit-and-run step opens space.
-        if (nearbyThreats >= 3 && hpRatio < .62f)
+        bool surrounded = nearbyThreats >= surroundedThreatCount;
+        bool shouldReposition =
+            surrounded &&
+            (hpRatio <= tacticalRetreatHp || targetMonster.role == MonsterRole.Tank);
+
+        if (shouldReposition && TryFindTacticalReposition(out Vector3 safePoint))
         {
-            Vector3 away = transform.position - targetMonster.transform.position; away.y = 0f;
-            if (away.sqrMagnitude < .01f) away = -transform.forward;
-            Vector3 lateral = Vector3.Cross(Vector3.up, away.normalized) * ((GetInstanceID() & 1) == 0 ? 1f : -1f);
-            Vector3 retreat = transform.position + away.normalized * 2.2f + lateral * 1.1f;
-            if (NavMesh.SamplePosition(retreat, out NavMeshHit tacticalHit, 2.5f, NavMesh.AllAreas)) MoveTo(tacticalHit.position, .15f);
+            MoveTo(safePoint, 0.15f);
             return;
         }
+
+        float distance = FlatDistance(transform.position, targetMonster.transform.position);
         if (distance > attackRange)
         {
             MoveTo(targetMonster.transform.position);
             return;
         }
+
         StopMoving();
         Face(targetMonster.transform.position);
         if (attackTimer <= 0f) AttackTarget();
     }
 
+    private bool TryFindTacticalReposition(out Vector3 bestPoint)
+    {
+        bestPoint = transform.position;
+        if (targetMonster == null) return false;
+
+        Vector3 threatCenter = BattlefieldTactics.MonsterCentroid(transform.position, tacticalDangerRadius);
+        Vector3 away = transform.position - threatCenter;
+        away.y = 0f;
+        if (away.sqrMagnitude < 0.01f)
+            away = transform.position - targetMonster.transform.position;
+        if (away.sqrMagnitude < 0.01f)
+            away = -transform.forward;
+        away.Normalize();
+
+        float bestScore = float.MinValue;
+        int samples = Mathf.Max(4, tacticalPositionSamples);
+
+        for (int i = 0; i < samples; i++)
+        {
+            float angle = (i - (samples - 1) * 0.5f) * (140f / Mathf.Max(1, samples - 1));
+            Vector3 direction = Quaternion.Euler(0f, angle, 0f) * away;
+            Vector3 candidate = transform.position + direction * tacticalRepositionDistance;
+
+            if (!NavMesh.SamplePosition(candidate, out NavMeshHit hit, 1.75f, NavMesh.AllAreas))
+                continue;
+
+            float nearestThreat = BattlefieldTactics.NearestMonsterDistance(hit.position, 10f);
+            int crowd = CountNearbyMonsters(hit.position, 3.5f);
+            float targetDistance = FlatDistance(hit.position, targetMonster.transform.position);
+            float score =
+                nearestThreat * 5f -
+                crowd * 10f -
+                Mathf.Abs(targetDistance - Mathf.Max(attackRange + 1f, 3f)) * 1.5f;
+
+            if (score > bestScore)
+            {
+                bestScore = score;
+                bestPoint = hit.position;
+            }
+        }
+
+        return bestScore > float.MinValue;
+    }
+
     private void ExecuteExperienceAction()
     {
-        if (targetExperience == null || targetExperience.IsCollected)
-        {
-            StopMoving();
-            return;
-        }
-
-        float pickupRadius =
-            basePickupRadius *
-            (1f + 0.2f * upgradeStacks[(int)HeroUpgradeType.PickupRange]);
-
-        if (FlatDistance(transform.position, targetExperience.transform.position) <= pickupRadius)
-        {
-            targetExperience.Collect(this);
-            targetExperience = null;
-            nextDecisionAt = 0f;
-            return;
-        }
-
-        MoveTo(targetExperience.transform.position, Mathf.Max(0.2f, pickupRadius * 0.65f));
+        CollectExperienceInPickupRadius();
+        targetExperience = null;
+        currentAction = HeroUtilityAction.Idle;
+        nextDecisionAt = 0f;
+        StopMoving();
     }
 
     private void ExecuteObjectiveAction()
@@ -544,7 +611,9 @@ public class HeroBotAI : MonoBehaviour
 
         float cooldownScale = 1f - 0.07f * upgradeStacks[(int)HeroUpgradeType.AttackSpeed];
         attackTimer = Mathf.Max(0.18f, attackCooldown * Mathf.Max(0.45f, cooldownScale));
-        Trigger("Attack");`r`n        GameAudioController.Instance?.PlayMeleeHit();`r`n        attackCounter++;
+        Trigger("Attack");
+        GameAudioController.Instance?.PlayMeleeHit();
+        attackCounter++;
 
         CapturePillarManager pillars = CapturePillarManager.Instance;
         float factionDamage = pillars != null ? pillars.HeroDamageMultiplier : 1f;
@@ -719,7 +788,9 @@ public class HeroBotAI : MonoBehaviour
         while (Experience >= ExperienceToNext)
         {
             Experience -= ExperienceToNext;
-            Level++;`r`n            GameAudioController.Instance?.PlayReward();`r`n            // Level growth keeps the Hero competitive through the middle of a long run.
+            Level++;
+            GameAudioController.Instance?.PlayReward();
+            // Level growth keeps the Hero competitive through the middle of a long run.
             maxHP *= 1.055f;
             currentHP = Mathf.Min(maxHP, currentHP + maxHP * .04f);
             QueueUpgradeDecision();
@@ -835,8 +906,36 @@ public class HeroBotAI : MonoBehaviour
     {
         int rank = upgradeStacks[(int)definition.type];
         float relevance = definition.utility != null ? definition.utility.Score(state) : 0f;
-        float diminishingReturn = Mathf.Lerp(1f, 0.45f, rank / 5f);
-        return relevance * diminishingReturn + (5 - rank) * 0.035f;
+        float lowHealth = state.Length > 0 ? state[0] : 0f;
+        float closePressure = state.Length > 1 ? state[1] : 0f;
+        float crowdPressure = state.Length > 2 ? state[2] : 0f;
+        float rangedPressure = state.Length > 3 ? state[3] : 0f;
+        float weakenedEnemies = state.Length > 4 ? state[4] : 0f;
+        float offenseBuilt = state.Length > 7 ? state[7] : 0f;
+
+        float tacticalSynergy = definition.type switch
+        {
+            HeroUpgradeType.MaxHealth => lowHealth * 1.35f + crowdPressure * .35f,
+            HeroUpgradeType.Armor => lowHealth * 1.15f + closePressure * .55f,
+            HeroUpgradeType.LifeSteal => lowHealth * .95f + offenseBuilt * .35f,
+            HeroUpgradeType.HealingPulse => lowHealth * 1.25f + crowdPressure * .3f,
+            HeroUpgradeType.MoveSpeed => rangedPressure * .7f + crowdPressure * .45f,
+            HeroUpgradeType.Knockback => crowdPressure * .85f + closePressure * .5f,
+            HeroUpgradeType.Cleave => crowdPressure * 1.15f,
+            HeroUpgradeType.Shockwave => crowdPressure * 1.2f,
+            HeroUpgradeType.ArcaneNova => crowdPressure * 1.25f,
+            HeroUpgradeType.InfernoField => crowdPressure * .9f + rangedPressure * .35f,
+            HeroUpgradeType.OrbitingSaws => closePressure * .95f + crowdPressure * .55f,
+            HeroUpgradeType.Execution => weakenedEnemies * .95f,
+            HeroUpgradeType.MultiStrike => offenseBuilt * .45f + weakenedEnemies * .35f,
+            HeroUpgradeType.Damage => .25f + offenseBuilt * .25f,
+            HeroUpgradeType.AttackSpeed => .2f + offenseBuilt * .3f,
+            HeroUpgradeType.PickupRange => .12f,
+            _ => 0f
+        };
+
+        float diminishingReturn = Mathf.Lerp(1f, 0.42f, rank / 5f);
+        return (relevance + tacticalSynergy) * diminishingReturn + (5 - rank) * 0.03f;
     }
 
     private IEnumerator ProcessUpgradeDecisions()

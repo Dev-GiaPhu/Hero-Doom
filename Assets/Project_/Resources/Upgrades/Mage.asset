@@ -15,18 +15,18 @@ MonoBehaviour:
   role: 1
   displayName: Mage
   icon: {fileID: -2037249011, guid: c173592673edd0b40a2a732360051046, type: 3}
-  unlockCost: 180
+  unlockCost: 150
   maxPowerLevel: 2147483647
-  basePowerCost: 80
-  powerCostGrowth: 1.48
-  healthPerLevel: 0.08
-  damagePerLevel: 0.11
+  basePowerCost: 68
+  powerCostGrowth: 1.35
+  healthPerLevel: 0.065
+  damagePerLevel: 0.09
   maxAutoLevel: 6
-  baseAutoCost: 180
-  autoCostGrowth: 1.6
-  startingInterval: 24
-  intervalMultiplier: 0.78
+  baseAutoCost: 230
+  autoCostGrowth: 1.48
+  startingInterval: 22
+  intervalMultiplier: 0.8
   minimumInterval: 6
-  previousMonsterAutoLevelRequired: 3
+  previousMonsterAutoLevelRequired: 2
   maxAlive: 12
   chargeGoldPerAutoSummon: 0
