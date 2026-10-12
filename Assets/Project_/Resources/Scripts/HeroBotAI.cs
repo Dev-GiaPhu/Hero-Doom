@@ -104,6 +104,17 @@ public class HeroBotAI : MonoBehaviour
     [Range(0f, 2f)] public float lastStandDamageMultiplier = 1.1f;
     [Range(0f, 0.25f)] public float lastStandHealFraction = 0.06f;
 
+    [Header("Adaptive Target Intelligence")]
+    [Tooltip("How long the Hero remembers and prioritizes an enemy that hurt them.")]
+    [Min(0.5f)] public float aggressorMemorySeconds = 5f;
+    [Range(0f, 40f)] public float aggressorPriority = 24f;
+    [Tooltip("How strongly low-HP Hero avoids chasing enemies deep inside large packs.")]
+    [Range(0f, 2f)] public float unsafeTargetPenalty = 1f;
+    [Tooltip("Prediction when intercepting a moving target.")]
+    [Range(0f, 0.8f)] public float chaseLeadSeconds = 0.28f;
+    [Tooltip("Throttle new NavMesh destinations; do not request a path every frame.")]
+    [Min(0.05f)] public float navigationRefreshInterval = 0.2f;
+
     [Header("Level Up - AI chooses one of two")]
     public HeroUpgradeThought upgradeThoughtPrefab;
     public HeroUpgradeDefinition[] upgradeDefinitions = new HeroUpgradeDefinition[16];
@@ -174,11 +185,17 @@ public class HeroBotAI : MonoBehaviour
     private float nextLastStandAt;
     private NavMeshPath tacticalPath;
     private NavMeshPath experiencePath;
+    private NavMeshPath combatPath;
+    private MonsterAI recentAggressor;
+    private float recentAggressorUntil;
+    private float nextNavigationRefresh;
+    private Vector3 lastNavigationDestination;
 
     void Awake()
     {
         tacticalPath = new NavMeshPath();
         experiencePath = new NavMeshPath();
+        combatPath = new NavMeshPath();
         EnsureRuntimeComponents();
         currentHP = maxHP;
     }
@@ -234,14 +251,18 @@ public class HeroBotAI : MonoBehaviour
 
     private void OnMonsterDied(MonsterAI deadMonster)
     {
-        if (deadMonster == null || targetMonster != deadMonster)
-            return;
+        if (deadMonster == null) return;
+        if (deadMonster == recentAggressor)
+        {
+            recentAggressor = null;
+            recentAggressorUntil = 0f;
+        }
+        if (targetMonster != deadMonster) return;
 
         targetMonster = null;
         attackTimer = 0f;
+        targetRecheckTimer = 0f;
         nextDecisionAt = 0f;
-
-        // Re-evaluate immediately instead of continuing toward the corpse.
         StopMoving();
     }
 
@@ -254,7 +275,9 @@ public class HeroBotAI : MonoBehaviour
     private MonsterAI PickBestMonsterTarget()
     {
         MonsterAI best = null;
+        MonsterAI second = null;
         float bestScore = float.MinValue;
+        float secondScore = float.MinValue;
         float currentScore = float.MinValue;
 
         foreach (MonsterAI monster in MonsterAI.ActiveMonsters)
@@ -265,44 +288,82 @@ public class HeroBotAI : MonoBehaviour
 
             float score = ScoreMonsterTarget(monster, distance);
             if (monster == targetMonster) currentScore = score + currentTargetPreference;
-
             if (score > bestScore)
             {
-                bestScore = score;
+                second = best;
+                secondScore = bestScore;
                 best = monster;
+                bestScore = score;
+            }
+            else if (score > secondScore)
+            {
+                second = monster;
+                secondScore = score;
             }
         }
 
+        // Keep a viable target rather than changing focus for tiny score gains.
         if (targetMonster != null && targetMonster.IsAlive && currentScore > float.MinValue &&
-            best != targetMonster && bestScore < currentScore + targetSwitchThreshold)
+            (best == targetMonster || bestScore < currentScore + targetSwitchThreshold) &&
+            IsCombatTargetReachable(targetMonster))
             return targetMonster;
 
-        return best;
+        // Path checks apply only to the two strongest candidates, not every
+        // monster each decision tick. Never chase through an unreachable island.
+        if (IsCombatTargetReachable(best)) return best;
+        if (IsCombatTargetReachable(second)) return second;
+        return null;
+    }
+
+    private bool IsCombatTargetReachable(MonsterAI monster)
+    {
+        if (monster == null || !monster.IsAlive || agent == null ||
+            !agent.enabled || !agent.isOnNavMesh || combatPath == null)
+            return false;
+
+        if (FlatDistance(transform.position, monster.transform.position) <= attackRange)
+            return true;
+        return NavMesh.SamplePosition(monster.transform.position, out NavMeshHit hit, 2f, agent.areaMask) &&
+               agent.CalculatePath(hit.position, combatPath) &&
+               combatPath.status == NavMeshPathStatus.PathComplete;
     }
 
     private float ScoreMonsterTarget(MonsterAI monster, float distance)
     {
         float roleThreat = monster.role switch
         {
-            MonsterRole.Assassin => 13f,
-            MonsterRole.Mage => 11f,
+            MonsterRole.Assassin => 14f,
+            MonsterRole.Mage => 13f,
             MonsterRole.Tank => 5f,
-            _ => 7f
+            _ => 8f
         };
 
-        float proximity = Mathf.Clamp01(1f - distance / Mathf.Max(1f, searchRadius)) * 15f;
-        float finishValue = (1f - monster.HPPercent) * 10f;
-        float objectiveThreat = monster.GuardPillar != null ? 4f : 0f;
-        float dps = monster.attackDamage / Mathf.Max(0.2f, monster.attackCooldown);
-        float dpsThreat = Mathf.Clamp(dps / 5f, 0f, 10f);
-        float isolation = 1f - Mathf.Clamp01(BattlefieldTactics.CountAlliesNear(monster, monster.transform.position, 3.2f) / 3f);
-        float isolationBonus = isolation * 4f;
+        float hpRatio = currentHP / Mathf.Max(1f, maxHP);
+        float proximity = Mathf.Clamp01(1f - distance / Mathf.Max(1f, searchRadius)) * 21f;
+        float finishValue = (1f - monster.HPPercent) * 14f;
+        float objectiveThreat = monster.GuardPillar != null ? 5f : 0f;
+        float dps = monster.attackDamage / Mathf.Max(.2f, monster.attackCooldown);
+        float dpsThreat = Mathf.Clamp(dps / 5f, 0f, 11f);
+        int neighbors = BattlefieldTactics.CountAlliesNear(monster, monster.transform.position, 3.2f);
+        float isolationBonus = Mathf.Clamp01(1f - neighbors / 3f) * 5f;
 
-        // Hero xử lý glass-cannon trước, nhưng vẫn ưu tiên mục tiêu ở đủ gần để không chạy xuyên cả bầy.
-        if (monster.role == MonsterRole.Mage || monster.role == MonsterRole.Assassin)
-            finishValue *= 1.25f;
+        // Counter attackers and remove weak enemies before chasing distant targets.
+        float recentHit = monster == recentAggressor && Time.time < recentAggressorUntil
+            ? aggressorPriority * Mathf.Clamp01((recentAggressorUntil - Time.time) /
+                                                Mathf.Max(.5f, aggressorMemorySeconds))
+            : 0f;
+        float finishingBlow = monster.currentHP <= SkillDamage * 1.2f ? 16f : 0f;
+        float closeEnemy = distance <= attackRange + .35f ? 23f : 0f;
+        float economicThreat = monster.AssignedGoldMine != null && distance < 14f
+            ? 9f * Mathf.Clamp01(hpRatio + .3f)
+            : 0f;
+        float unsafeEngagement = Mathf.Max(0, neighbors - 1) * (1f - hpRatio) *
+                                 8f * unsafeTargetPenalty *
+                                 Mathf.Clamp01(distance / Mathf.Max(1f, tacticalDangerRadius));
 
-        return roleThreat + proximity + finishValue + objectiveThreat + dpsThreat + isolationBonus;
+        return roleThreat + proximity + finishValue + objectiveThreat + dpsThreat +
+               isolationBonus + recentHit + finishingBlow + closeEnemy + economicThreat -
+               unsafeEngagement;
     }
 
     private void EvaluateUtilityActions()
@@ -428,7 +489,11 @@ public class HeroBotAI : MonoBehaviour
 
             float distanceUtility = Mathf.Clamp01(1f - distance / Mathf.Max(1f, xpSeekRadius));
             float valueUtility = Mathf.Clamp01(orb.value / 8f);
-            float dangerPenalty = CountNearbyMonsters(orb.transform.position, 4f) * 5f;
+            // Do not walk into an enemy pack just to level up.
+            if (CountNearbyMonsters(orb.transform.position, 4.5f) > 0 ||
+                CountNearbyMonsters(Vector3.Lerp(transform.position, orb.transform.position, .5f), 3f) > 0)
+                continue;
+            float dangerPenalty = 0f;
             float lowHealthPenalty = hpRatio < 0.3f ? (0.3f - hpRatio) * 35f : 0f;
 
             float utility =
@@ -552,13 +617,47 @@ public class HeroBotAI : MonoBehaviour
 
         if (distance > attackRange)
         {
-            MoveTo(targetMonster.transform.position);
+            // Never run past a nearby attacker to chase a remote higher-scored foe.
+            if (attackTimer <= 0f && TryAttackImmediateThreat())
+                return;
+
+            Vector3 destination = targetMonster.transform.position;
+            Vector3 velocity = targetMonster.CurrentVelocity;
+            velocity.y = 0f;
+            if (velocity.sqrMagnitude > .3f)
+                destination += Vector3.ClampMagnitude(velocity, 8f) * chaseLeadSeconds;
+            MoveTo(destination);
             return;
         }
 
         StopMoving();
         Face(targetMonster.transform.position);
         if (attackTimer <= 0f) AttackTarget();
+    }
+
+    private bool TryAttackImmediateThreat()
+    {
+        MonsterAI immediate = null;
+        float bestScore = float.MinValue;
+        foreach (MonsterAI monster in MonsterAI.ActiveMonsters)
+        {
+            if (monster == null || !monster.IsAlive) continue;
+            float distance = FlatDistance(transform.position, monster.transform.position);
+            if (distance > attackRange) continue;
+            float score = (attackRange - distance) * 4f + (1f - monster.HPPercent) * 12f +
+                          (monster == recentAggressor && Time.time < recentAggressorUntil ? 18f : 0f);
+            if (score <= bestScore) continue;
+            bestScore = score;
+            immediate = monster;
+        }
+        if (immediate == null) return false;
+
+        targetMonster = immediate;
+        targetRecheckTimer = Mathf.Max(targetRecheckTimer, targetRecheckInterval);
+        StopMoving();
+        Face(immediate.transform.position);
+        AttackTarget();
+        return true;
     }
 
     private bool TryFindTacticalReposition(out Vector3 bestPoint)
@@ -576,6 +675,8 @@ public class HeroBotAI : MonoBehaviour
         away.Normalize();
 
         float bestScore = float.MinValue;
+        float currentNearest = BattlefieldTactics.NearestMonsterDistance(transform.position, 10f);
+        int currentCrowd = CountNearbyMonsters(transform.position, 3.5f);
         int samples = Mathf.Max(4, tacticalPositionSamples);
 
         for (int i = 0; i < samples; i++)
@@ -600,8 +701,6 @@ public class HeroBotAI : MonoBehaviour
                 Mathf.Abs(targetDistance - Mathf.Max(attackRange + 1f, 3f)) * 1.5f;
 
             // Do not flee to a point that is at least as crowded and no safer.
-            float currentNearest = BattlefieldTactics.NearestMonsterDistance(transform.position, 10f);
-            int currentCrowd = CountNearbyMonsters(transform.position, 3.5f);
             if (crowd >= currentCrowd && nearestThreat <= currentNearest + .35f)
                 continue;
 
@@ -845,6 +944,13 @@ public class HeroBotAI : MonoBehaviour
         float pillarProtection = pillars != null ? Mathf.Max(1f, pillars.HeroHealthMultiplier) : 1f;
         float actual = Mathf.Min(currentHP, amount * (1f - effectiveArmor) / pillarProtection);
         currentHP -= actual;
+        if (actual > 0f && source != null && source.IsAlive)
+        {
+            recentAggressor = source;
+            recentAggressorUntil = Time.time + Mathf.Max(.5f, aggressorMemorySeconds);
+            targetRecheckTimer = 0f;
+            nextDecisionAt = 0f;
+        }
         if (actual > 0f)
             HeroSkillBurst.Spawn(attackImpactVisualPrefab, transform.position + Vector3.up * 0.95f);
 
@@ -925,6 +1031,9 @@ public class HeroBotAI : MonoBehaviour
         orbitingSaws.Clear();
         StopAllCoroutines();
         pendingUpgradeOffers.Clear();
+        recentAggressor = null;
+        recentAggressorUntil = 0f;
+        nextNavigationRefresh = 0f;
         currentThought = null;
         upgradeDecisionRoutine = null;
         nextInfernoField = Time.time + 4f;
@@ -1155,12 +1264,26 @@ public class HeroBotAI : MonoBehaviour
     private void MoveTo(Vector3 destination, float stoppingDistance = -1f)
     {
         if (agent == null || !agent.enabled || !agent.isOnNavMesh) return;
-        float speedBonus = 1f + 0.06f * upgradeStacks[(int)HeroUpgradeType.MoveSpeed];
+
+        float speedBonus = 1f + .06f * upgradeStacks[(int)HeroUpgradeType.MoveSpeed];
         agent.speed = moveSpeed * speedBonus;
-        agent.stoppingDistance = stoppingDistance >= 0f ? stoppingDistance : attackRange * 0.8f;
+        agent.stoppingDistance = stoppingDistance >= 0f ? stoppingDistance : attackRange * .8f;
         agent.isStopped = false;
-        agent.SetDestination(destination);
-        SetSpeed(agent.speed);
+
+        // Rate-limit SetDestination across all behaviors; continuously asking
+        // NavMesh for the same path hurts performance as armies get larger.
+        if (Time.time >= nextNavigationRefresh &&
+            (!agent.hasPath || (destination - lastNavigationDestination).sqrMagnitude > .49f ||
+             agent.remainingDistance <= agent.stoppingDistance + .2f))
+        {
+            if (NavMesh.SamplePosition(destination, out NavMeshHit hit, 2f, agent.areaMask))
+            {
+                agent.SetDestination(hit.position);
+                lastNavigationDestination = destination;
+            }
+            nextNavigationRefresh = Time.time + Mathf.Max(.05f, navigationRefreshInterval);
+        }
+        SetSpeed(agent.velocity.magnitude);
     }
 
     private void StopMoving()

@@ -102,6 +102,14 @@ public class MonsterAI : MonoBehaviour
     [Tooltip("Khoảng thời gian quét nhanh vàng sát chân.")]
     [Range(0.05f, 0.5f)] public float goldAutoPickupInterval = .14f;
 
+    [Header("Coordinated Tactical AI")]
+    [Tooltip("After being wounded, prefer defending or fighting over continued harvesting.")]
+    [Min(0.5f)] public float heroThreatMemorySeconds = 3.5f;
+    [Tooltip("Extra urgency for engaging the Hero after being attacked.")]
+    [Range(0f, 40f)] public float defensiveResponseWeight = 20f;
+    [Tooltip("How strongly roles take positions based on the Hero's movement direction.")]
+    [Range(0f, 2f)] public float dynamicFormationWeight = 1f;
+
     [Header("Combat Feel")]
     public float rotationSpeed = 12f;
     public float knockbackForce = 0.7f;
@@ -113,6 +121,9 @@ public class MonsterAI : MonoBehaviour
     public CapturePillar GuardPillar { get; private set; }
     public bool IsPlayerControlled { get; private set; }
     public MonsterUtilityAction CurrentTacticalAction => currentUtilityAction;
+    // Expose live movement only; other AI systems do not need access to NavMeshAgent internals.
+    public Vector3 CurrentVelocity => agent != null && agent.enabled && agent.isOnNavMesh
+        ? agent.velocity : Vector3.zero;
     private Vector3 playerMoveTarget;
     private bool hasPlayerMoveTarget;
 
@@ -144,6 +155,7 @@ public class MonsterAI : MonoBehaviour
     private float miningProgress;
     private float nextGoldPickupAt;
     private NavMeshPath economicPath;
+    private float lastHeroThreatAt = -999f;
     public GoldMine AssignedGoldMine => targetGoldMine;
 
     void Awake()
@@ -288,8 +300,14 @@ public class MonsterAI : MonoBehaviour
         float distance = heroPresent
             ? FlatDistance(transform.position, heroTarget.transform.position)
             : float.PositiveInfinity;
+        bool hitRecently = Time.time - lastHeroThreatAt <= Mathf.Max(.5f, heroThreatMemorySeconds);
+        bool wasEngaged = currentUtilityAction == MonsterUtilityAction.Attack ||
+                          currentUtilityAction == MonsterUtilityAction.Advance ||
+                          currentUtilityAction == MonsterUtilityAction.MageSpecial;
         bool heroThreatensThisUnit = heroPresent &&
-                                    distance <= heroInterventionRadius;
+            (distance <= heroInterventionRadius ||
+             (hitRecently && distance <= heroInterventionRadius + 6f) ||
+             (wasEngaged && distance <= heroInterventionRadius * 1.25f));
 
         float attackScore = heroPresent ? ScoreAttack(distance) : 0f;
         float advanceScore = heroPresent ? ScoreAdvance(distance) : 0f;
@@ -297,6 +315,18 @@ public class MonsterAI : MonoBehaviour
         float specialScore = heroPresent ? ScoreMageSpecial(distance) : 0f;
         float guardScore = ScoreReturnToGuard();
         float idleScore = 1f;
+
+        // Damage memory prevents miners switching straight back to farming while
+        // under attack, without forcing units across the entire map.
+        if (hitRecently && heroPresent && distance <= heroInterventionRadius + 6f)
+        {
+            float urgency = defensiveResponseWeight *
+                            Mathf.Clamp01(1f - (Time.time - lastHeroThreatAt) /
+                                Mathf.Max(.5f, heroThreatMemorySeconds));
+            attackScore += urgency;
+            advanceScore += urgency * .8f;
+            specialScore += urgency * .6f;
+        }
 
         // Hero is an obstacle, not the only objective. Long-distance chases stop
         // when a mine or ground gold can generate more meaningful progress.
@@ -379,12 +409,17 @@ public class MonsterAI : MonoBehaviour
 
         if (heroThreatensThisUnit)
         {
-            // Never ignore a nearby, immediately lethal attacker to pick up a coin.
+            // Stop gambling on economy when a living Hero is about to interrupt.
             float emergencyDistance = Mathf.Max(4.5f, attackRange + 2f);
-            if (distance < emergencyDistance)
+            if (distance < emergencyDistance || hitRecently)
             {
-                collectScore *= .24f;
-                mineScore *= .15f;
+                collectScore *= .20f;
+                mineScore *= .10f;
+            }
+            else
+            {
+                collectScore *= .75f;
+                mineScore *= .60f;
             }
         }
 
@@ -589,18 +624,24 @@ public class MonsterAI : MonoBehaviour
         float normalizedDistance = Mathf.Clamp01(distance / 18f);
         float teamPressure = BattlefieldTactics.FocusPressure(heroTarget);
         float score = 34f + normalizedDistance * 18f;
+        int frontline = BattlefieldTactics.CountRoleNear(
+            MonsterRole.Tank, heroTarget.transform.position, 7.5f);
 
         switch (role)
         {
             case MonsterRole.Assassin:
-                score += 9f + teamPressure * 18f * teamPressureWeight;
+                // Wait for allied pressure before committing to risky dives.
+                score += 4f + teamPressure * 18f * teamPressureWeight;
+                if (frontline > 0) score += 8f;
                 if (HPPercent < assassinDisengageHp) score -= 30f;
                 break;
             case MonsterRole.Tank:
-                score += 14f + (1f - teamPressure) * 8f;
+                // Tank initiates when the team has not established a front line.
+                score += 14f + (1f - teamPressure) * 11f;
                 break;
             case MonsterRole.Mage:
-                score += 6f + teamPressure * 5f;
+                score += 3f + teamPressure * 5f;
+                if (frontline > 0) score += 5f;
                 break;
             default:
                 score += 5f;
@@ -699,15 +740,12 @@ public class MonsterAI : MonoBehaviour
             {
                 if (heroTarget == null || !heroTarget.IsAlive) { StopMoving(); break; }
                 float formationRange = role == MonsterRole.Mage
-                    ? Mathf.Min(preferredRange, attackRange)
+                    ? Mathf.Clamp(preferredRange, .8f, Mathf.Max(.8f, attackRange - .25f))
                     : Mathf.Max(.8f, attackRange * .82f);
-                Vector3 destination = BattlefieldTactics.FormationPoint(
-                    this, PredictedHeroPosition(.32f), formationRange);
-                if (GuardPillar != null) destination = ClampToGuardZone(destination);
-                float stop = role == MonsterRole.Mage
-                    ? Mathf.Max(.2f, Mathf.Min(preferredRange, attackRange) - .25f)
-                    : Mathf.Max(.2f, attackRange * .8f);
-                MoveTo(destination, stop);
+                Vector3 destination = TacticalApproachPoint(formationRange);
+                // A formation point is already offset from the Hero. Stopping at
+                // attackRange again would place this unit OUTSIDE attack range.
+                MoveTo(destination, .2f);
                 break;
             }
 
@@ -751,6 +789,57 @@ public class MonsterAI : MonoBehaviour
         }
     }
 
+    private Vector3 TacticalApproachPoint(float range)
+    {
+        if (heroTarget == null) return transform.position;
+        float lead = role == MonsterRole.Assassin ? .42f : role == MonsterRole.Tank ? .25f : .3f;
+        Vector3 predicted = PredictedHeroPosition(lead);
+        Vector3 destination = BattlefieldTactics.FormationPoint(this, predicted, range);
+        if (dynamicFormationWeight > 0f)
+        {
+            Vector3 heading = heroVelocityEstimate;
+            heading.y = 0f;
+            if (heading.sqrMagnitude < .6f)
+            {
+                heading = heroTarget.transform.forward;
+                heading.y = 0f;
+            }
+            if (heading.sqrMagnitude > .01f)
+            {
+                heading.Normalize();
+                Vector3 right = Vector3.Cross(Vector3.up, heading);
+                switch (role)
+                {
+                    case MonsterRole.Tank:
+                        // Intercept from the front to screen allied ranged units.
+                        destination = Vector3.Lerp(destination,
+                            predicted + heading * range * .65f,
+                            Mathf.Clamp01(dynamicFormationWeight));
+                        break;
+                    case MonsterRole.Assassin:
+                        // Alternate left/right lanes; approach from the blind side.
+                        float side = (GetInstanceID() & 1) == 0 ? 1f : -1f;
+                        destination = Vector3.Lerp(destination,
+                            predicted - heading * range * .65f + right * side * range * .75f,
+                            Mathf.Clamp01(dynamicFormationWeight));
+                        break;
+                    case MonsterRole.Mage:
+                        // Stay on the outside of the fight, avoiding the melee core.
+                        Vector3 away = transform.position - predicted;
+                        away.y = 0f;
+                        if (away.sqrMagnitude < .01f) away = -heading;
+                        destination = Vector3.Lerp(destination,
+                            predicted + away.normalized * range,
+                            Mathf.Clamp01(dynamicFormationWeight * .75f));
+                        break;
+                }
+            }
+        }
+
+        if (GuardPillar != null) destination = ClampToGuardZone(destination);
+        return destination;
+    }
+
     private void ExecuteCollectGold()
     {
         if (targetGoldPickup == null || !targetGoldPickup.CanClaim(this))
@@ -778,6 +867,15 @@ public class MonsterAI : MonoBehaviour
 
     private void ExecuteMineGold()
     {
+        if (heroTarget != null && heroTarget.IsAlive &&
+            Time.time - lastHeroThreatAt <= heroThreatMemorySeconds &&
+            FlatDistance(transform.position, heroTarget.transform.position) <= heroInterventionRadius + 5f)
+        {
+            ReleaseMine();
+            nextDecisionAt = 0f;
+            StopMoving();
+            return;
+        }
         if (targetGoldMine == null || !targetGoldMine.CanWork(this))
         {
             ReleaseMine();
@@ -1162,6 +1260,11 @@ public class MonsterAI : MonoBehaviour
         float actual = Mathf.Min(currentHP, amount * (1f - armor) / pillarProtection);
         currentHP -= actual;
         if (actual > 0f)
+        {
+            lastHeroThreatAt = Time.time;
+            nextDecisionAt = 0f;
+        }
+        if (actual > 0f)
             HeroSkillBurst.Spawn(hitEffectPrefab, transform.position + Vector3.up * 0.9f);
 
         DamagePopup.Spawn(
@@ -1303,12 +1406,22 @@ public class MonsterAI : MonoBehaviour
         if (agent == null || !agent.enabled || !agent.isOnNavMesh) return;
         agent.isStopped = false;
         agent.speed = moveSpeed;
-        agent.stoppingDistance = stoppingDistance >= 0 ? stoppingDistance : Mathf.Max(0.2f, attackRange * 0.8f);
-        if (!agent.hasPath || Time.time >= nextPathUpdate || (destination - lastDestination).sqrMagnitude > 1)
+        agent.stoppingDistance = stoppingDistance >= 0f
+            ? stoppingDistance : Mathf.Max(.2f, attackRange * .8f);
+
+        // Recalculate at a controlled rate, including failed paths. This avoids
+        // repeated per-frame pathfinding when a moving target is unreachable.
+        if (Time.time >= nextPathUpdate &&
+            (!agent.hasPath || agent.pathStatus == NavMeshPathStatus.PathInvalid ||
+             (destination - lastDestination).sqrMagnitude > .75f ||
+             agent.remainingDistance <= agent.stoppingDistance + .2f))
         {
-            agent.SetDestination(destination);
-            lastDestination = destination;
-            nextPathUpdate = Time.time + 0.2f;
+            if (NavMesh.SamplePosition(destination, out NavMeshHit hit, 2f, agent.areaMask))
+            {
+                agent.SetDestination(hit.position);
+                lastDestination = destination;
+            }
+            nextPathUpdate = Time.time + .22f;
         }
         SetSpeed(agent.velocity.magnitude);
     }
