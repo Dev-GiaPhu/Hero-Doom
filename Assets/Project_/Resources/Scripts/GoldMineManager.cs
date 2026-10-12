@@ -17,6 +17,11 @@ public sealed class GoldMineManager : MonoBehaviour
 
     [Header("World Mining Economy")]
     [Range(1, 16)] public int targetMineCount = 7;
+    [Header("Global Mining Pressure")]
+    [Tooltip("Maximum monsters reserved across ALL mines; prevents parallel mine snowball.")]
+    [Range(1, 16)] public int maxConcurrentMiners = 4;
+    [Tooltip("Maximum miners on one mine, even if its prefab allows more.")]
+    [Range(1, 4)] public int maxWorkersPerMine = 2;
     [Min(4f)] public float mineSpawnMinDistance = 10f;
     [Min(8f)] public float mineSpawnMaxDistance = 36f;
     [Min(4f)] public float mineSpacing = 11f;
@@ -64,6 +69,18 @@ public sealed class GoldMineManager : MonoBehaviour
         if (Time.time < nextRefresh) return;
         nextRefresh = Time.time + Mathf.Max(.2f, refreshInterval);
         RefreshWorld();
+    }
+
+    public bool HasAvailableMinerSlot()
+    {
+        int reserved = 0;
+        foreach (GoldMine mine in GoldMine.Active)
+        {
+            if (mine == null) continue;
+            reserved += mine.WorkerCount;
+            if (reserved >= Mathf.Max(1, maxConcurrentMiners)) return false;
+        }
+        return true;
     }
 
     public Vector3 EconomyAnchor => Anchor;

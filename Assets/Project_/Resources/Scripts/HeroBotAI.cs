@@ -92,6 +92,17 @@ public class HeroBotAI : MonoBehaviour
     [Range(2f, 12f)] public float tacticalDangerRadius = 6f;
     [Tooltip("Số hướng NavMesh được thử khi tìm chỗ reposition.")]
     [Range(4, 16)] public int tacticalPositionSamples = 8;
+    [Tooltip("Seconds between tactical retreats; prevents endless running without attacking.")]
+    [Min(0.5f)] public float tacticalRetreatCooldown = 3.5f;
+    [Tooltip("Maximum duration of each short reposition.")]
+    [Min(0.2f)] public float tacticalRetreatMaxDuration = 1.15f;
+
+    [Header("Last Stand - innate anti-swarm response")]
+    [Range(2, 12)] public int lastStandEnemyCount = 4;
+    [Range(0.1f, 0.95f)] public float lastStandHpThreshold = 0.65f;
+    [Min(4f)] public float lastStandCooldown = 18f;
+    [Range(0f, 2f)] public float lastStandDamageMultiplier = 1.1f;
+    [Range(0f, 0.25f)] public float lastStandHealFraction = 0.06f;
 
     [Header("Level Up - AI chooses one of two")]
     public HeroUpgradeThought upgradeThoughtPrefab;
@@ -157,9 +168,17 @@ public class HeroBotAI : MonoBehaviour
     private int attackCounter;
     private float nextHealingPulse;
     private float nextArcaneNova;
+    private float nextTacticalRetreatAt;
+    private float tacticalRetreatUntil;
+    private Vector3 tacticalRetreatDestination;
+    private float nextLastStandAt;
+    private NavMeshPath tacticalPath;
+    private NavMeshPath experiencePath;
 
     void Awake()
     {
+        tacticalPath = new NavMeshPath();
+        experiencePath = new NavMeshPath();
         EnsureRuntimeComponents();
         currentHP = maxHP;
     }
@@ -288,8 +307,6 @@ public class HeroBotAI : MonoBehaviour
 
     private void EvaluateUtilityActions()
     {
-        // EXP chỉ được nhặt trong pickup radius; Hero không đổi đường chạy chỉ để đuổi orb.
-        targetExperience = null;
         targetObjective = CapturePillarManager.Instance != null
             ? CapturePillarManager.Instance.FindClosestCaptured(transform.position)
             : null;
@@ -298,8 +315,16 @@ public class HeroBotAI : MonoBehaviour
         float hpRatio = currentHP / Mathf.Max(1f, maxHP);
         float danger = Mathf.Clamp01(nearbyThreats / Mathf.Max(1f, surroundedThreatCount));
 
+        // Hunt dropped EXP only when the immediate area is safe. This prevents
+        // a late-game leveling stall while preserving combat priority in danger.
+        float experienceScore = 0f;
+        targetExperience = nearbyThreats == 0
+            ? PickBestExperienceTarget(out experienceScore)
+            : null;
+
         float combatScore = ScoreCombatAction() * combatWeight;
         float objectiveScore = ScoreObjectiveAction(targetObjective) * objectiveWeight;
+        experienceScore *= experienceWeight;
         float idleScore = 1f;
 
         // Khi HP thấp hoặc đang bị vây, Hero không bỏ combat để đi pillar.
@@ -309,12 +334,15 @@ public class HeroBotAI : MonoBehaviour
 
         combatScore += currentAction == HeroUtilityAction.Combat ? currentActionInertia : 0f;
         objectiveScore += currentAction == HeroUtilityAction.AttackObjective ? currentActionInertia : 0f;
+        experienceScore += currentAction == HeroUtilityAction.CollectExperience && targetExperience != null
+            ? currentActionInertia : 0f;
         idleScore += currentAction == HeroUtilityAction.Idle ? currentActionInertia : 0f;
 
         HeroUtilityAction bestAction = HeroUtilityAction.Idle;
         float bestScore = idleScore;
 
         ConsiderUtilityCandidate(HeroUtilityAction.Combat, combatScore, ref bestAction, ref bestScore);
+        ConsiderUtilityCandidate(HeroUtilityAction.CollectExperience, experienceScore, ref bestAction, ref bestScore);
         ConsiderUtilityCandidate(HeroUtilityAction.AttackObjective, objectiveScore, ref bestAction, ref bestScore);
 
         bool currentInvalid = !IsCurrentActionValid();
@@ -332,6 +360,7 @@ public class HeroBotAI : MonoBehaviour
             currentActionScore = currentAction switch
             {
                 HeroUtilityAction.Combat => combatScore,
+                HeroUtilityAction.CollectExperience => experienceScore,
                 HeroUtilityAction.AttackObjective => objectiveScore,
                 _ => idleScore
             };
@@ -412,7 +441,14 @@ public class HeroBotAI : MonoBehaviour
 
             if (orb == targetExperience) utility += 5f;
 
-            if (utility > bestUtility)
+            // Prefer the highest-value reachable orb, not an unreachable orb
+            // that would permanently block EXP progression.
+            if (utility > bestUtility && utility > 0f &&
+                agent != null && agent.enabled && agent.isOnNavMesh &&
+                experiencePath != null &&
+                NavMesh.SamplePosition(orb.transform.position, out NavMeshHit xpHit, 1.8f, NavMesh.AllAreas) &&
+                agent.CalculatePath(xpHit.position, experiencePath) &&
+                experiencePath.status == NavMeshPathStatus.PathComplete)
             {
                 bestUtility = utility;
                 best = orb;
@@ -448,7 +484,8 @@ public class HeroBotAI : MonoBehaviour
         return currentAction switch
         {
             HeroUtilityAction.Combat => targetMonster != null && targetMonster.IsAlive,
-            HeroUtilityAction.CollectExperience => false,
+            HeroUtilityAction.CollectExperience => targetExperience != null && !targetExperience.IsCollected &&
+                                                    CountNearbyMonsters(transform.position, tacticalDangerRadius) == 0,
             HeroUtilityAction.AttackObjective => targetObjective != null,
             _ => true
         };
@@ -462,10 +499,7 @@ public class HeroBotAI : MonoBehaviour
                 ExecuteCombatAction();
                 break;
             case HeroUtilityAction.CollectExperience:
-                targetExperience = null;
-                currentAction = HeroUtilityAction.Idle;
-                nextDecisionAt = 0f;
-                StopMoving();
+                ExecuteExperienceAction();
                 break;
             case HeroUtilityAction.AttackObjective:
                 ExecuteObjectiveAction();
@@ -486,18 +520,36 @@ public class HeroBotAI : MonoBehaviour
 
         int nearbyThreats = CountNearbyMonsters(transform.position, tacticalDangerRadius);
         float hpRatio = currentHP / Mathf.Max(1f, maxHP);
-        bool surrounded = nearbyThreats >= surroundedThreatCount;
-        bool shouldReposition =
-            surrounded &&
-            (hpRatio <= tacticalRetreatHp || targetMonster.role == MonsterRole.Tank);
+        float distance = FlatDistance(transform.position, targetMonster.transform.position);
 
-        if (shouldReposition && TryFindTacticalReposition(out Vector3 safePoint))
+        // Finish a short tactical dodge before returning to combat. Attack enemies
+        // within melee reach during the dodge instead of becoming permanently passive.
+        if (Time.time < tacticalRetreatUntil &&
+            FlatDistance(transform.position, tacticalRetreatDestination) > .45f)
         {
-            MoveTo(safePoint, 0.15f);
+            MoveTo(tacticalRetreatDestination, .15f);
+            if (distance <= attackRange && attackTimer <= 0f)
+            {
+                Face(targetMonster.transform.position);
+                AttackTarget();
+            }
+            return;
+        }
+        tacticalRetreatUntil = 0f;
+
+        bool overwhelmed = nearbyThreats >= surroundedThreatCount &&
+            (hpRatio <= tacticalRetreatHp ||
+             (nearbyThreats >= surroundedThreatCount + 2 && hpRatio <= .85f));
+        if (overwhelmed && Time.time >= nextTacticalRetreatAt &&
+            TryFindTacticalReposition(out Vector3 safePoint))
+        {
+            tacticalRetreatDestination = safePoint;
+            tacticalRetreatUntil = Time.time + Mathf.Max(.2f, tacticalRetreatMaxDuration);
+            nextTacticalRetreatAt = Time.time + Mathf.Max(.5f, tacticalRetreatCooldown);
+            MoveTo(safePoint, .15f);
             return;
         }
 
-        float distance = FlatDistance(transform.position, targetMonster.transform.position);
         if (distance > attackRange)
         {
             MoveTo(targetMonster.transform.position);
@@ -534,6 +586,10 @@ public class HeroBotAI : MonoBehaviour
 
             if (!NavMesh.SamplePosition(candidate, out NavMeshHit hit, 1.75f, NavMesh.AllAreas))
                 continue;
+            if (agent == null || !agent.enabled || !agent.isOnNavMesh ||
+                tacticalPath == null || !agent.CalculatePath(hit.position, tacticalPath) ||
+                tacticalPath.status != NavMeshPathStatus.PathComplete)
+                continue;
 
             float nearestThreat = BattlefieldTactics.NearestMonsterDistance(hit.position, 10f);
             int crowd = CountNearbyMonsters(hit.position, 3.5f);
@@ -542,6 +598,12 @@ public class HeroBotAI : MonoBehaviour
                 nearestThreat * 5f -
                 crowd * 10f -
                 Mathf.Abs(targetDistance - Mathf.Max(attackRange + 1f, 3f)) * 1.5f;
+
+            // Do not flee to a point that is at least as crowded and no safer.
+            float currentNearest = BattlefieldTactics.NearestMonsterDistance(transform.position, 10f);
+            int currentCrowd = CountNearbyMonsters(transform.position, 3.5f);
+            if (crowd >= currentCrowd && nearestThreat <= currentNearest + .35f)
+                continue;
 
             if (score > bestScore)
             {
@@ -555,11 +617,28 @@ public class HeroBotAI : MonoBehaviour
 
     private void ExecuteExperienceAction()
     {
+        if (targetExperience == null || targetExperience.IsCollected ||
+            CountNearbyMonsters(transform.position, tacticalDangerRadius) > 0)
+        {
+            targetExperience = null;
+            currentAction = HeroUtilityAction.Idle;
+            nextDecisionAt = 0f;
+            StopMoving();
+            return;
+        }
+
         CollectExperienceInPickupRadius();
-        targetExperience = null;
-        currentAction = HeroUtilityAction.Idle;
-        nextDecisionAt = 0f;
-        StopMoving();
+        if (targetExperience == null || targetExperience.IsCollected)
+        {
+            targetExperience = null;
+            currentAction = HeroUtilityAction.Idle;
+            nextDecisionAt = 0f;
+            StopMoving();
+            return;
+        }
+
+        MoveTo(targetExperience.transform.position,
+            Mathf.Max(0.15f, basePickupRadius * (1f + .2f * upgradeStacks[(int)HeroUpgradeType.PickupRange]) * .65f));
     }
 
     private void ExecuteObjectiveAction()
@@ -655,6 +734,7 @@ public class HeroBotAI : MonoBehaviour
 
     private void TickSurvivalSkills()
     {
+        TickLastStand();
         TickInfernoField();
         EnsureOrbitingSaws();
         int healing = upgradeStacks[(int)HeroUpgradeType.HealingPulse];
@@ -675,6 +755,25 @@ public class HeroBotAI : MonoBehaviour
             HeroSkillBurst.Spawn(arcaneNovaVisualPrefab, transform.position + Vector3.up * 0.12f);
             DamageNearby(null, SkillDamage * (1.2f + nova * 0.3f), 7.5f + nova * 0.55f, 24);
         }
+    }
+
+    // Innate comeback move: rare, modest crowd control and partial recovery
+    // only when the Hero is both wounded and outnumbered.
+    private void TickLastStand()
+    {
+        if (Time.time < nextLastStandAt ||
+            currentHP / Mathf.Max(1f, maxHP) > lastStandHpThreshold ||
+            CountNearbyMonsters(transform.position, 5.5f) < lastStandEnemyCount)
+            return;
+
+        nextLastStandAt = Time.time + Mathf.Max(4f, lastStandCooldown);
+        Trigger("Attack");
+        HeroSkillBurst.Spawn(arcaneNovaVisualPrefab, transform.position + Vector3.up * .12f);
+        DamageNearby(null, SkillDamage * lastStandDamageMultiplier, 5.5f, 12);
+        float healed = HealFraction(lastStandHealFraction);
+        if (healed > 0f)
+            DamagePopup.Spawn(damagePopupPrefab, transform.position + Vector3.up * 2.1f,
+                healed, DamagePopupKind.Healing);
     }
 
     public float SkillDamage => attackDamage * (1f + Mathf.Min(24, Mathf.Max(0, Level - 1)) * 0.055f) *
@@ -829,6 +928,10 @@ public class HeroBotAI : MonoBehaviour
         currentThought = null;
         upgradeDecisionRoutine = null;
         nextInfernoField = Time.time + 4f;
+        nextLastStandAt = Time.time + 3f;
+        nextTacticalRetreatAt = 0f;
+        tacticalRetreatUntil = 0f;
+        targetExperience = null;
         maxHP = HeroDoomGameManager.Instance != null ? HeroDoomGameManager.Instance.baseHeroHP : 500f;
         currentHP = maxHP;
     }

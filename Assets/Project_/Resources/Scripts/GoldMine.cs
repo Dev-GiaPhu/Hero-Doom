@@ -76,7 +76,14 @@ public sealed class GoldMine : MonoBehaviour
     {
         if (worker == null || !worker.IsAlive || IsDepleted) return false;
         CleanupWorkers();
-        return workers.Contains(worker) || workers.Count < Mathf.Max(1, maxWorkers);
+        if (workers.Contains(worker)) return true;
+
+        GoldMineManager manager = GoldMineManager.Instance;
+        int localLimit = manager != null
+            ? Mathf.Min(maxWorkers, manager.maxWorkersPerMine)
+            : maxWorkers;
+        return workers.Count < Mathf.Max(1, localLimit) &&
+               (manager == null || manager.HasAvailableMinerSlot());
     }
 
     public bool Reserve(MonsterAI worker)
