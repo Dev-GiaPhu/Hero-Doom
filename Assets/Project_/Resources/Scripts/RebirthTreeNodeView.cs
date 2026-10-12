@@ -14,6 +14,26 @@ public sealed class RebirthTreeNodeView : MonoBehaviour, IPointerEnterHandler
     public TMP_Text cost;
     [HideInInspector] public RebirthTreeController controller;
 
+    private void Awake()
+    {
+        if (button == null) button = GetComponent<Button>();
+    }
+
+    private void OnEnable()
+    {
+        if (button == null) button = GetComponent<Button>();
+        if (button != null)
+        {
+            button.onClick.RemoveListener(Purchase);
+            button.onClick.AddListener(Purchase);
+        }
+    }
+
+    private void OnDisable()
+    {
+        if (button != null) button.onClick.RemoveListener(Purchase);
+    }
+
     public void OnPointerEnter(PointerEventData eventData)
     {
         controller?.ShowNodeDetails(nodeIndex);

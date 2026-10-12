@@ -202,13 +202,17 @@ public class SummonerUpgrades : MonoBehaviour
         return definitions[slot].Interval(autoLevels[slot]) * RebirthAutoIntervalMultiplier;
     }
 
-    public bool IsRebirthNodePurchased(int index) =>
-        index >= 0 && index < purchasedRebirthNodes.Length && purchasedRebirthNodes[index];
+    public bool IsRebirthNodePurchased(int index)
+    {
+        EnsureRebirthTreeState();
+        return index >= 0 && index < purchasedRebirthNodes.Length && purchasedRebirthNodes[index];
+    }
 
     public bool AreRebirthPrerequisitesMet(int index)
     {
         RebirthTreeNodeDefinition node = rebirthTree != null ? rebirthTree.GetNode(index) : null;
         if (node == null) return false;
+        if (node.prerequisites == null) return true;
         foreach (int prerequisite in node.prerequisites)
             if (!IsRebirthNodePurchased(prerequisite)) return false;
         return true;

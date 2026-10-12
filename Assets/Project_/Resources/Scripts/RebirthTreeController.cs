@@ -31,6 +31,7 @@ public sealed class RebirthTreeController : MonoBehaviour
     private void Awake()
     {
         if (upgrades == null) upgrades = FindFirstObjectByType<SummonerUpgrades>();
+        if (definition == null && upgrades != null) definition = upgrades.rebirthTree;
         if (openButton != null) openButton.onClick.AddListener(TogglePopup);
         if (closeButton != null) closeButton.onClick.AddListener(ClosePopup);
         if (popup != null) popup.SetActive(false);
@@ -81,6 +82,7 @@ public sealed class RebirthTreeController : MonoBehaviour
 
     public void TryPurchase(int nodeIndex)
     {
+        if (upgrades == null) upgrades = FindFirstObjectByType<SummonerUpgrades>();
         if (upgrades == null || !upgrades.TryPurchaseRebirthNode(nodeIndex)) return;
         selectedNode = nodeIndex;
         Refresh();
@@ -94,7 +96,11 @@ public sealed class RebirthTreeController : MonoBehaviour
 
     public void Refresh()
     {
-        if (upgrades == null || definition == null) return;
+        if (upgrades == null) upgrades = FindFirstObjectByType<SummonerUpgrades>();
+        if (upgrades == null) return;
+        if (definition == null || definition != upgrades.rebirthTree)
+            definition = upgrades.rebirthTree;
+        if (definition == null) return;
         RebirthTreeNodeDefinition selected = definition.GetNode(selectedNode) ?? definition.GetNode(0);
         if (pointLabel != null)
             pointLabel.text = $"POINTS  {upgrades.RebirthPoints}  |  COST  {(selected != null ? selected.cost : 0)}";

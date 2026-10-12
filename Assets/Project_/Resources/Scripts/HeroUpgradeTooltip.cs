@@ -12,19 +12,40 @@ public class HeroUpgradeTooltip : MonoBehaviour
     public TMP_Text description;
     public TMP_Text rankDetails;
     private HeroDoomGameManager manager;
+    private HeroUpgradeType shownType;
+    private bool showing;
+
+    private void Awake()
+    {
+        if (manager == null) manager = FindFirstObjectByType<HeroDoomGameManager>();
+    }
+
+    // PointerExit is not fired when an upgrade icon is disabled or destroyed.
+    // Also close stale details when the Hero instance or selected stack changes.
+    private void Update()
+    {
+        if (!showing || tooltipRoot == null || !tooltipRoot.gameObject.activeSelf) return;
+        if (manager == null) manager = FindFirstObjectByType<HeroDoomGameManager>();
+        int stack = manager != null && manager.CurrentHero != null && manager.CurrentHero.IsAlive
+            ? manager.CurrentHero.GetUpgradeStack(shownType)
+            : manager != null ? manager.GetSavedHeroUpgradeStack(shownType) : 0;
+        if (stack <= 0) Hide();
+    }
 
     public void Show(HeroUpgradeType type, PointerEventData pointer)
     {
         if (tooltipRoot == null || pointer == null) return;
         if (manager == null) manager = FindFirstObjectByType<HeroDoomGameManager>();
         HeroBotAI hero = manager != null ? manager.CurrentHero : null;
-        HeroUpgradeDefinition definition = hero != null ? hero.GetUpgradeDefinition(type) : null;
-        if (definition == null) return;
+        HeroUpgradeDefinition definition = manager != null ? manager.GetHeroUpgradeDefinition(type) : null;
+        if (definition == null) { Hide(); return; }
 
         if (icon != null) icon.sprite = definition.icon;
         if (title != null) title.text = $"{(definition.category == HeroUpgradeCategory.Skill ? "SKILL" : "STAT")}  |  {definition.displayName}";
         if (description != null) description.text = definition.description;
-        int rank = hero.GetUpgradeStack(type);
+        int rank = hero != null && hero.IsAlive
+            ? hero.GetUpgradeStack(type)
+            : manager != null ? manager.GetSavedHeroUpgradeStack(type) : 0;
         if (rankDetails != null)
         {
             string current = EffectAtRank(type, Mathf.Max(1, rank));
@@ -33,6 +54,8 @@ public class HeroUpgradeTooltip : MonoBehaviour
                 ? $"CURRENT  x{rank}: {current}\nNEXT  x{rank + 1}: {next}"
                 : $"NOT YET CHOSEN\nNEXT  x1: {next}";
         }
+        shownType = type;
+        showing = true;
         tooltipRoot.gameObject.SetActive(true);
         PositionAtPointer(pointer.position);
     }
@@ -55,7 +78,9 @@ public class HeroUpgradeTooltip : MonoBehaviour
 
     public void Hide()
     {
-        if (tooltipRoot != null) tooltipRoot.gameObject.SetActive(false);
+        showing = false;
+        if (tooltipRoot != null && tooltipRoot.gameObject.activeSelf)
+            tooltipRoot.gameObject.SetActive(false);
     }
 
     private static string EffectAtRank(HeroUpgradeType type, int rank)

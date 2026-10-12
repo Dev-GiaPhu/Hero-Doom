@@ -20,4 +20,10 @@ public class HeroUpgradeHover : MonoBehaviour, IPointerEnterHandler, IPointerExi
     {
         tooltip?.Hide();
     }
+
+    private void OnDisable()
+    {
+        // Disabling a slot during death/respawn does not send PointerExit.
+        tooltip?.Hide();
+    }
 }

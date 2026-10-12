@@ -6,8 +6,12 @@ public class HeroDoomGameManager : MonoBehaviour
 
     [Header("Hero Lifecycle")]
     public GameObject heroPrefab;
-    public float baseHeroHP = 220f;
-    public float heroHPPerDeath = 45f;
+    public float baseHeroHP = 340f;
+    public float heroHPPerDeath = 60f;
+    [Header("Hero baseline safety (compatible with old serialized scenes)")]
+    [Min(1f)] public float minimumHeroHP = 340f;
+    [Min(0f)] public float minimumHeroHPPerDeath = 60f;
+    public float EffectiveBaseHeroHP => Mathf.Max(1f, baseHeroHP, minimumHeroHP);
     public float respawnDelay = 5f;
     public float respawnSearchRadius = 10f;
     [Min(0f)] public float respawnMinimumDistance = 4f;
@@ -32,6 +36,27 @@ public class HeroDoomGameManager : MonoBehaviour
     public double RunGoldEarned { get; private set; }
     public bool IsRespawning => respawnTimer > 0f;
     public float RespawnRemaining => Mathf.Max(0f, respawnTimer);
+    // The HUD must render saved progression while no living Hero exists.
+    public int SavedHeroLevel => savedHeroLevel;
+    public float SavedHeroExperience => savedHeroExperience;
+    public float SavedHeroExperienceToNext => 10f + (Mathf.Max(1, savedHeroLevel) - 1) * 8f;
+
+    public int GetSavedHeroUpgradeStack(HeroUpgradeType type)
+    {
+        int index = (int)type;
+        return index >= 0 && index < savedHeroUpgrades.Length ? savedHeroUpgrades[index] : 0;
+    }
+
+    public HeroUpgradeDefinition GetHeroUpgradeDefinition(HeroUpgradeType type)
+    {
+        if (CurrentHero != null && CurrentHero.IsAlive)
+        {
+            HeroUpgradeDefinition active = CurrentHero.GetUpgradeDefinition(type);
+            if (active != null) return active;
+        }
+        HeroBotAI authoredHero = heroPrefab != null ? heroPrefab.GetComponent<HeroBotAI>() : null;
+        return authoredHero != null ? authoredHero.GetUpgradeDefinition(type) : null;
+    }
 
     private float respawnTimer;
     private Vector3 lastHeroDeathPosition;
@@ -108,12 +133,15 @@ public class HeroDoomGameManager : MonoBehaviour
     }
     public void RegisterHero(HeroBotAI hero)
     {
-        if (hero == null) return;
+        if (hero == null || !hero.IsAlive) return;
+        // SpawnHero registers immediately; HeroBotAI.Start also calls this.
+        // A second registration would restore stats / duplicate missing choices.
+        if (CurrentHero == hero) return;
 
         CurrentHero = hero;
 
         float permanentMaxHP =
-            baseHeroHP + heroHPPerDeath * HeroDeaths;
+            EffectiveBaseHeroHP + Mathf.Max(heroHPPerDeath, minimumHeroHPPerDeath) * HeroDeaths;
 
         hero.SetPermanentDifficulty(permanentMaxHP);
         hero.RestoreProgression(savedHeroLevel, savedHeroExperience, savedHeroUpgrades);

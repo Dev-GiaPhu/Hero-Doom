@@ -44,6 +44,20 @@ public class HeroBotAI : MonoBehaviour
     public float searchRadius = 24f;
     [Range(0f, 0.8f)] public float armor = 0.05f;
 
+    [Header("Adaptive Hero Survival")]
+    [Tooltip("Extra armor per nearby attacker beyond the first two; only active while surrounded.")]
+    [Range(0f, .1f)] public float crowdArmorPerEnemy = .035f;
+    [Tooltip("Maximum additional armor when severely outnumbered.")]
+    [Range(0f, .4f)] public float maximumCrowdArmor = .18f;
+    [Tooltip("Temporary attack bonus per nearby attacker beyond the first two.")]
+    [Range(0f, .12f)] public float crowdDamagePerEnemy = .05f;
+    [Tooltip("Seconds since last damage before recovery can begin.")]
+    [Min(1f)] public float recoverySafetyDelay = 5f;
+    [Tooltip("Health regenerated per second when no enemies are near.")]
+    [Range(0f, .1f)] public float safeRecoveryPerSecond = .025f;
+    [Tooltip("Out-of-combat recovery stops at this fraction of maximum health.")]
+    [Range(.3f, 1f)] public float safeRecoveryCap = .75f;
+
     [Header("Experience")]
     [Tooltip("EXP inside this radius is collected automatically.")]
     [Min(0.1f)] public float basePickupRadius = 1.8f;
@@ -179,6 +193,7 @@ public class HeroBotAI : MonoBehaviour
     private int attackCounter;
     private float nextHealingPulse;
     private float nextArcaneNova;
+    private float lastDamageTime = -100f;
     private float nextTacticalRetreatAt;
     private float tacticalRetreatUntil;
     private Vector3 tacticalRetreatDestination;
@@ -224,6 +239,7 @@ public class HeroBotAI : MonoBehaviour
         attackTimer -= Time.deltaTime;
         xpPickupTimer -= Time.deltaTime;
         TickSurvivalSkills();
+        RecoverWhenSafe();
 
         if (xpPickupTimer <= 0f)
         {
@@ -795,8 +811,9 @@ public class HeroBotAI : MonoBehaviour
 
         CapturePillarManager pillars = CapturePillarManager.Instance;
         float factionDamage = pillars != null ? pillars.HeroDamageMultiplier : 1f;
-        float levelPower = 1f + Mathf.Min(24, Mathf.Max(0, Level - 1)) * 0.055f;
-        float damage = attackDamage * levelPower * factionDamage * (1f + 0.10f * upgradeStacks[(int)HeroUpgradeType.Damage]);
+        float levelPower = 1f + Mathf.Min(24, Mathf.Max(0, Level - 1)) * 0.07f;
+        float damage = attackDamage * levelPower * factionDamage * CrowdDamageMultiplier *
+                       (1f + 0.10f * upgradeStacks[(int)HeroUpgradeType.Damage]);
         if (upgradeStacks[(int)HeroUpgradeType.Execution] > 0 && targetMonster.HPPercent < 0.25f)
             damage *= 1f + 0.10f * upgradeStacks[(int)HeroUpgradeType.Execution];
 
@@ -829,6 +846,27 @@ public class HeroBotAI : MonoBehaviour
         int shock = upgradeStacks[(int)HeroUpgradeType.Shockwave];
         if (shock > 0 && attackCounter % Mathf.Max(2, 7 - shock) == 0)
             DamageNearby(null, damage * 0.28f, 3.5f, 8);
+    }
+
+    private float CrowdDamageMultiplier
+    {
+        get
+        {
+            int enemies = CountNearbyMonsters(transform.position, 5f);
+            return 1f + Mathf.Min(.3f, Mathf.Max(0, enemies - 2) * crowdDamagePerEnemy);
+        }
+    }
+
+    private void RecoverWhenSafe()
+    {
+        if (safeRecoveryPerSecond <= 0f ||
+            Time.time < lastDamageTime + Mathf.Max(1f, recoverySafetyDelay) ||
+            CountNearbyMonsters(transform.position, 8f) > 0)
+            return;
+
+        float target = maxHP * Mathf.Clamp01(safeRecoveryCap);
+        if (currentHP < target)
+            currentHP = Mathf.Min(target, currentHP + maxHP * safeRecoveryPerSecond * Time.deltaTime);
     }
 
     private void TickSurvivalSkills()
@@ -875,7 +913,8 @@ public class HeroBotAI : MonoBehaviour
                 healed, DamagePopupKind.Healing);
     }
 
-    public float SkillDamage => attackDamage * (1f + Mathf.Min(24, Mathf.Max(0, Level - 1)) * 0.055f) *
+    public float SkillDamage => attackDamage * (1f + Mathf.Min(24, Mathf.Max(0, Level - 1)) * 0.07f) *
+                                CrowdDamageMultiplier *
                                 (1f + .1f * upgradeStacks[(int)HeroUpgradeType.Damage]);
 
     private void TickInfernoField()
@@ -939,11 +978,16 @@ public class HeroBotAI : MonoBehaviour
     {
         if (!IsAlive || amount <= 0f || (spawnProtection != null && spawnProtection.IsProtected)) return 0f;
 
-        float effectiveArmor = Mathf.Clamp01(armor + 0.04f * upgradeStacks[(int)HeroUpgradeType.Armor]);
+        int nearbyEnemies = CountNearbyMonsters(transform.position, 5f);
+        float crowdArmor = Mathf.Min(maximumCrowdArmor,
+            Mathf.Max(0, nearbyEnemies - 2) * crowdArmorPerEnemy);
+        float effectiveArmor = Mathf.Clamp(armor + .04f * upgradeStacks[(int)HeroUpgradeType.Armor] +
+                                           crowdArmor, 0f, .8f);
         CapturePillarManager pillars = CapturePillarManager.Instance;
         float pillarProtection = pillars != null ? Mathf.Max(1f, pillars.HeroHealthMultiplier) : 1f;
         float actual = Mathf.Min(currentHP, amount * (1f - effectiveArmor) / pillarProtection);
         currentHP -= actual;
+        if (actual > 0f) lastDamageTime = Time.time;
         if (actual > 0f && source != null && source.IsAlive)
         {
             recentAggressor = source;
@@ -996,8 +1040,8 @@ public class HeroBotAI : MonoBehaviour
             Level++;
             GameAudioController.Instance?.PlayReward();
             // Level growth keeps the Hero competitive through the middle of a long run.
-            maxHP *= 1.055f;
-            currentHP = Mathf.Min(maxHP, currentHP + maxHP * .04f);
+            maxHP *= 1.065f;
+            currentHP = Mathf.Min(maxHP, currentHP + maxHP * .055f);
             QueueUpgradeDecision();
         }
         HeroDoomGameManager.Instance?.SaveHeroProgression(this);
@@ -1017,9 +1061,17 @@ public class HeroBotAI : MonoBehaviour
         Experience = Mathf.Max(0f, experience);
         if (stacks != null)
             for (int i = 0; i < Mathf.Min(stacks.Length, upgradeStacks.Length); i++) upgradeStacks[i] = Mathf.Clamp(stacks[i], 0, 5);
-        maxHP = Mathf.Max(1f, maxHP) * Mathf.Pow(1.055f, Mathf.Max(0, Level - 1)) *
+        maxHP = Mathf.Max(1f, maxHP) * Mathf.Pow(1.065f, Mathf.Max(0, Level - 1)) *
                 Mathf.Pow(1.12f, upgradeStacks[(int)HeroUpgradeType.MaxHealth]);
         currentHP = maxHP;
+
+        // A Hero may die while waiting for the upgrade choice animation. The
+        // earned level survives, so recreate the unresolved choices on respawn.
+        int appliedChoices = 0;
+        foreach (int rank in upgradeStacks) appliedChoices += rank;
+        int pendingChoices = Mathf.Max(0, Level - 1 - appliedChoices);
+        for (int i = 0; i < pendingChoices; i++)
+            QueueUpgradeDecision();
     }
 
     public void ResetProgression()
@@ -1031,6 +1083,7 @@ public class HeroBotAI : MonoBehaviour
         orbitingSaws.Clear();
         StopAllCoroutines();
         pendingUpgradeOffers.Clear();
+        lastDamageTime = -100f;
         recentAggressor = null;
         recentAggressorUntil = 0f;
         nextNavigationRefresh = 0f;
@@ -1041,7 +1094,8 @@ public class HeroBotAI : MonoBehaviour
         nextTacticalRetreatAt = 0f;
         tacticalRetreatUntil = 0f;
         targetExperience = null;
-        maxHP = HeroDoomGameManager.Instance != null ? HeroDoomGameManager.Instance.baseHeroHP : 500f;
+        maxHP = HeroDoomGameManager.Instance != null
+            ? HeroDoomGameManager.Instance.EffectiveBaseHeroHP : 340f;
         currentHP = maxHP;
     }
 
@@ -1162,6 +1216,7 @@ public class HeroBotAI : MonoBehaviour
                 : null;
             currentThought?.Show(transform, offer.first, offer.second, thinkingDuration);
             yield return new WaitForSecondsRealtime(thinkingDuration);
+            if (!IsAlive) break;
 
             HeroUpgradeDefinition selected = ScoreUpgrade(offer.first, BuildUpgradeDecisionState()) + Random.Range(-0.12f, 0.12f) >=
                                              ScoreUpgrade(offer.second, BuildUpgradeDecisionState()) + Random.Range(-0.12f, 0.12f)
@@ -1213,6 +1268,13 @@ public class HeroBotAI : MonoBehaviour
         IsAlive = false;
         spawnProtection?.End();
         if (currentThought != null) Destroy(currentThought.gameObject);
+        currentThought = null;
+        if (upgradeDecisionRoutine != null)
+        {
+            StopCoroutine(upgradeDecisionRoutine);
+            upgradeDecisionRoutine = null;
+        }
+        pendingUpgradeOffers.Clear();
         if (knockbackMotor != null) knockbackMotor.enabled = false;
         StopMoving();
         if (agent != null) agent.enabled = false;
