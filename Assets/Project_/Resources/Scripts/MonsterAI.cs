@@ -143,12 +143,13 @@ public class MonsterAI : MonoBehaviour
     private GoldPickup targetGoldPickup;
     private float miningProgress;
     private float nextGoldPickupAt;
-    private readonly NavMeshPath economicPath = new NavMeshPath();
+    private NavMeshPath economicPath;
     public GoldMine AssignedGoldMine => targetGoldMine;
 
     void Awake()
     {
         retreatPath = new NavMeshPath();
+        economicPath = new NavMeshPath();
         EnsureRuntimeComponents();
         currentHP = maxHP;
     }
@@ -481,7 +482,7 @@ public class MonsterAI : MonoBehaviour
 
     private bool HasEconomicPath(Vector3 point)
     {
-        if (agent == null || !agent.enabled || !agent.isOnNavMesh) return false;
+        if (agent == null || !agent.enabled || !agent.isOnNavMesh || economicPath == null) return false;
         return agent.CalculatePath(point, economicPath) &&
                economicPath.status == NavMeshPathStatus.PathComplete;
     }
