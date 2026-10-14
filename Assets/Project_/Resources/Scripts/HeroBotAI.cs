@@ -177,6 +177,8 @@ public class HeroBotAI : MonoBehaviour
     private readonly List<HeroOrbitingSaw> orbitingSaws = new();
     private float nextInfernoField;
     private readonly List<ExperienceOrb> xpCollectBuffer = new(16);
+    // Cached snapshot used by damaging inferno strikes; monster death mutates ActiveMonsters.
+    private readonly List<MonsterAI> infernoStrikeTargets = new(64);
     private MonsterAI targetMonster;
     private ExperienceOrb targetExperience;
     private CapturePillar targetObjective;
@@ -929,16 +931,20 @@ public class HeroBotAI : MonoBehaviour
         // A broad strike clears clustered enemies, then leaves a persistent burn zone.
         int strikeLimit = Mathf.Min(4, 1 + rank);
         int struck = 0;
-        foreach (MonsterAI monster in MonsterAI.ActiveMonsters)
+        Vector3 strikeCenter = target.transform.position;
+        infernoStrikeTargets.Clear();
+        infernoStrikeTargets.AddRange(MonsterAI.ActiveMonsters);
+        foreach (MonsterAI monster in infernoStrikeTargets)
         {
             if (monster == null || !monster.IsAlive ||
-                Vector3.Distance(monster.transform.position, target.transform.position) > 4.5f) continue;
+                Vector3.Distance(monster.transform.position, strikeCenter) > 4.5f) continue;
             Vector3 strikePoint = monster.transform.position;
             strikePoint.y = transform.position.y + 0.12f;
             HeroSkillBurst.Spawn(lightningStrikeVisualPrefab, strikePoint);
             monster.TakeDamage(SkillDamage * (0.28f + 0.06f * rank), this);
             if (++struck >= strikeLimit) break;
         }
+        infernoStrikeTargets.Clear();
         if (struck == 0) HeroSkillBurst.Spawn(lightningStrikeVisualPrefab, ground + Vector3.up * 0.12f);
         HeroFireField field = Instantiate(fireFieldPrefab, ground, Quaternion.identity);
         field.Activate(this, rank);

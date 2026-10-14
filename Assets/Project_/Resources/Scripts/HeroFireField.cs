@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using UnityEngine;
 
 /// <summary>Timed ground hazard using an authored visual prefab.</summary>
@@ -12,6 +13,8 @@ public sealed class HeroFireField : MonoBehaviour
     private float radius;
     private float endsAt;
     private float nextPulse;
+    // Reused per-field snapshot: killing a monster removes it from ActiveMonsters.
+    private readonly List<MonsterAI> pulseTargets = new(64);
 
     public void Activate(HeroBotAI source, int rank)
     {
@@ -41,7 +44,9 @@ public sealed class HeroFireField : MonoBehaviour
         float damage = owner.SkillDamage * .32f;
         float radiusSqr = radius * radius;
         int hits = 0;
-        foreach (MonsterAI monster in MonsterAI.ActiveMonsters)
+        pulseTargets.Clear();
+        pulseTargets.AddRange(MonsterAI.ActiveMonsters);
+        foreach (MonsterAI monster in pulseTargets)
         {
             if (monster == null || !monster.IsAlive) continue;
             Vector3 delta = monster.transform.position - transform.position;
@@ -50,5 +55,6 @@ public sealed class HeroFireField : MonoBehaviour
             monster.TakeDamage(damage, true);
             if (++hits >= maxTargetsPerPulse) break;
         }
+        pulseTargets.Clear();
     }
 }

@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.VFX;
 
@@ -14,6 +15,8 @@ public sealed class HeroOrbitingSaw : MonoBehaviour
     private int index;
     private int bladeCount = 1;
     private float nextHit;
+    // Snapshot prevents TakeDamage/Die from invalidating ActiveMonsters' HashSet enumerator.
+    private readonly List<MonsterAI> hitTargets = new(64);
 
     public void Initialize(HeroBotAI hero, int bladeIndex, int count)
     {
@@ -45,7 +48,9 @@ public sealed class HeroOrbitingSaw : MonoBehaviour
         transform.rotation = Quaternion.Euler(0f, -phase * Mathf.Rad2Deg + 90f, 0f);
         if (Time.time < nextHit) return;
         nextHit = Time.time + damageInterval;
-        foreach (MonsterAI monster in MonsterAI.ActiveMonsters)
+        hitTargets.Clear();
+        hitTargets.AddRange(MonsterAI.ActiveMonsters);
+        foreach (MonsterAI monster in hitTargets)
         {
             if (monster == null || !monster.IsAlive) continue;
             Vector3 delta = monster.transform.position - transform.position;
@@ -53,5 +58,6 @@ public sealed class HeroOrbitingSaw : MonoBehaviour
             if (delta.sqrMagnitude <= 1.2f * 1.2f)
                 monster.TakeDamage(owner.SkillDamage * damageFactor, true);
         }
+        hitTargets.Clear();
     }
 }
